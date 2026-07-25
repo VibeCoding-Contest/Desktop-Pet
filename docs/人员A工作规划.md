@@ -121,14 +121,14 @@
 - [ ] 合并 PR 到 main —— 待执行
 
 ### 里程碑 5：跟随鼠标 F10（2:30–3:00，与 B 联调）
-- [ ] `app.js`：canvas `dblclick` → 2 秒内监听 mousemove，调 `pet.moveTo`
-- [ ] **自测**：双击后角色跟随鼠标移动 2 秒
+- [x] `app.js`：canvas `dblclick` → 2 秒内监听 mousemove，调 `pet.moveTo`
+- [ ] **自测**：双击后角色跟随鼠标移动 2 秒 —— 代码已写、语法校验通过；需本机验证（见 §十三）
 
 ### 里程碑 6：边缘吸附 F13 + 托盘 F14（3:00–4:00）
-- [ ] `main.js`：`Tray` + 托盘菜单（显示/退出）；IPC `minimize-to-tray`、`tray-action`
-- [ ] `app.js`：拖拽结束时获取 window bounds，判断屏幕边缘吸附
-- [ ] `app.js`：`close` 事件改为最小化到托盘
-- [ ] **自测**：拖到边缘吸附；关闭最小化到托盘；托盘可恢复
+- [x] `main.js`：`Tray` + 托盘菜单（显示/退出）；IPC `minimize-to-tray`、`tray-action`
+- [x] `app.js`：拖拽结束时获取 window bounds，判断屏幕边缘吸附
+- [x] `app.js`：`close` 事件改为最小化到托盘
+- [ ] **自测**：拖到边缘吸附；关闭最小化到托盘；托盘可恢复 —— 代码已写、语法校验通过；需本机验证（见 §十三）
 
 ---
 
@@ -365,6 +365,60 @@ init()
 ### 12.6 下一步
 - 里程碑 5（跟随鼠标 F10，依赖 `pet.moveTo`，已就绪）
 - 里程碑 6（边缘吸附 F13 + 系统托盘 F14 + 完整持久化 F15）
+
+---
+
+## 十三、里程碑 5 & 6 实现记录（更新于 2026-07-25）
+
+> 本轮一次性完成 A 的全部剩余 P1/P2 功能：F10 跟随鼠标、F13 边缘吸附、F14 系统托盘、F15 完整持久化。
+
+### 13.1 本次改动文件
+| 文件 | 改动 | 说明 |
+|------|------|------|
+| `main.js` | 修改 | 系统托盘(`Tray`+菜单+click 恢复)；窗口 `close`→hide(F14)；新增 IPC `set-window-position`/`get-screen-size`；`close-app` 置 `isQuitting` 后退出；托盘失败降级到任务栏 |
+| `preload.js` | 修改 | 暴露 `setWindowPosition(x,y)` / `getScreenSize()`（F13/F15） |
+| `renderer/app.js` | 修改 | F10 双击跟随(节流 80ms)；F13 拖拽结束边缘吸附；F15 启动恢复窗口位置(clamp)+定时自动保存(10s)+拖拽结束保存 |
+| `assets/icons/tray.png` | 新增 | 32×32 黄色圆形托盘图标（脚本生成，RGBA PNG） |
+
+### 13.2 功能实现要点
+1. **F10 跟随鼠标**：`canvas dblclick` → `followMode=true` 持续 2s；mousemove 跟随分支以 80ms 节流调 `pet.moveTo(相对canvas坐标)`，pet 自动 clamp 到 canvas 内。跟随期间 `setClickThrough(false)` 保持可交互。
+2. **F13 边缘吸附**：拖拽 `mouseup` 后取 `getWindowBounds`+`getScreenSize`，距边 ≤24px 即吸附到 0 或屏幕边-窗口尺寸，经新 IPC `set-window-position` 落位。
+3. **F14 系统托盘**：`Tray` + 右键菜单（显示/退出）+ 单击恢复；窗口 `close` 事件 `preventDefault`→`hide`（最小化到托盘）；`close-app`/托盘退出置 `isQuitting=true` 再 `app.quit`，绕过 hide 拦截。托盘创建失败（Linux 无 appindicator）时 `win.setSkipTaskbar(false)` 降级到任务栏。
+4. **F15 持久化**：
+   - 启动 `loadState`：恢复 petType + status + 窗口位置（按屏幕 clamp 防离屏）
+   - 拖拽结束 `saveState`（即时保存位置）
+   - `setInterval` 10s 自动保存（兜底托盘退出/异常关闭）
+   - `menu:exit` 前显式 `await saveState()`
+   - SaveData 结构遵循接口文档 §6.1（pet.type/x/y + status + timestamp）
+
+### 13.3 新增 IPC（接口文档 §2.2 扩展）
+| Channel | 方向 | 参数 | 说明 |
+|---------|------|------|------|
+| `set-window-position` | renderer→main | `(x,y)` | 绝对定位窗口（F13 吸附 / F15 恢复） |
+| `get-screen-size` | renderer→main | 无→`{width,height}` | 主屏工作区尺寸（F13） |
+| `tray-action` | main→renderer | `'show'`/`'exit'` | 托盘菜单动作回调（preload 已暴露 `onTrayAction`） |
+
+### 13.4 验证情况
+- [x] `node --check` 通过：main.js / preload.js / app.js
+- [x] 托盘图标 PNG 合法（32×32，签名校验通过，252 字节）
+- [x] 未误改 B/C 文件
+- [ ] **运行时自测未完成**：沙箱无 Electron 二进制，需本机 `npm start` 验证：
+  - 双击宠物 → 跟随鼠标 2 秒
+  - 拖到屏幕边缘 → 自动吸附
+  - 关闭窗口 → 最小化到托盘；托盘单击/「显示」恢复
+  - 重启后 → petType/饱食度/心情/位置恢复
+  - Linux 无托盘环境 → 窗口回退到任务栏
+
+### 13.5 已知限制 / TODO
+| 项 | 说明 |
+|----|------|
+| Linux 托盘 | 需 appindicator/StatusNotifierItem 支持；缺失时降级任务栏，右键托盘菜单不可用，但「右键宠物→退出」仍可关闭 |
+| F10 跟随范围 | pet 仅在 canvas(200×200) 内跟随；跨屏跟随需让窗口跟随鼠标（未实现，超出 F10 范围） |
+| 双击副作用 | dblclick 前的两次 click 会各触发一次跳跃，属可接受表现 |
+| 窗口位置 clamp | `loadState` 用固定 220×220 clamp；若窗口尺寸改过需同步常量 |
+
+### 13.6 状态总结
+A 的全部里程碑（M1–M6）代码已实现并推送；运行时自测待本机 `npm start` 完成。B 的 `pet.js`、C 的 `status.js`/`bubble.js` 已合并，联调链路完整。
 
 ---
 
