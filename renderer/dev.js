@@ -78,6 +78,13 @@
     },
   });
   mk(actEl, 'dance(自定义动作)', function () { pet.setState('dance', { force: true }); log('dance'); });
+  mk(actEl, '跟随鼠标2s(F10)', function () {
+    pet.follow(function () {
+      var r = canvas.getBoundingClientRect();
+      return { x: mouseX - r.left - pet.width / 2, y: mouseY - r.top - pet.height / 2 };
+    }, 2000).then(function () { log('跟随结束'); });
+    log('开始跟随鼠标 2s');
+  });
 
   var simEl = document.getElementById('sim');
   mk(simEl, '心情低落(status:sad)', function () { bus.emit('status:sad', { mood: 15 }); });
@@ -112,6 +119,16 @@
     pet.jump();
     bus.emit('pet:clicked', { x: x, y: y });
     bus.emit('status:played', { mood: 90 });
+  });
+
+  var mouseX = 0, mouseY = 0;
+  window.addEventListener('mousemove', function (e) { mouseX = e.clientX; mouseY = e.clientY; });
+  canvas.addEventListener('dblclick', function () {
+    pet.follow(function () {
+      var r = canvas.getBoundingClientRect();
+      return { x: mouseX - r.left - pet.width / 2, y: mouseY - r.top - pet.height / 2 };
+    }, 2000).then(function () { log('跟随结束(dblclick)'); });
+    log('开始跟随鼠标 2s(dblclick)');
   });
 
   log('预览台就绪：点击/拖拽宠物，或用上方按钮');
