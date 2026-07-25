@@ -4,7 +4,7 @@
   "description": "桌面桌宠 APP",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start": "./run.sh",
     "build": "electron-builder",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
