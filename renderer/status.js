@@ -63,6 +63,44 @@ class Status {
     this.stop();
   }
 
+  createStatusBar(container) {
+    this._barEl = document.createElement('div');
+    this._barEl.className = 'status-bar';
+    this._barEl.innerHTML = `
+      <div class="status-bar__item">
+        <span class="status-bar__label">🍖</span>
+        <div class="status-bar__track">
+          <div class="status-bar__fill status-bar__fill--hunger" style="width:${this.hunger}%"></div>
+        </div>
+        <span class="status-bar__value">${Math.round(this.hunger)}</span>
+      </div>
+      <div class="status-bar__item">
+        <span class="status-bar__label">💖</span>
+        <div class="status-bar__track">
+          <div class="status-bar__fill status-bar__fill--mood" style="width:${this.mood}%"></div>
+        </div>
+        <span class="status-bar__value">${Math.round(this.mood)}</span>
+      </div>
+    `;
+    container.appendChild(this._barEl);
+
+    this.eventBus.on('status:change', ({ hunger, mood }) => {
+      const hungerFill = this._barEl.querySelector('.status-bar__fill--hunger');
+      const moodFill = this._barEl.querySelector('.status-bar__fill--mood');
+      const values = this._barEl.querySelectorAll('.status-bar__value');
+      if (hungerFill) hungerFill.style.width = hunger + '%';
+      if (moodFill) moodFill.style.width = mood + '%';
+      if (values[0]) values[0].textContent = Math.round(hunger);
+      if (values[1]) values[1].textContent = Math.round(mood);
+
+      if (hunger < 30) hungerFill.classList.add('status-bar__fill--low');
+      else hungerFill.classList.remove('status-bar__fill--low');
+
+      if (mood < 20) moodFill.classList.add('status-bar__fill--low');
+      else moodFill.classList.remove('status-bar__fill--low');
+    });
+  }
+
   _checkThresholds() {
     if (this.hunger < 10 && !this._starvingFired) {
       this._starvingFired = true;
