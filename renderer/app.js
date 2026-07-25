@@ -380,10 +380,19 @@ if (typeof window.Agent === 'function') {
     const tools = window.agentTools || { list: () => [], get: () => null };
     window.__agent = new window.Agent(eventBus, { llm, tools });
     chat.markAgentReady();
-    console.log('[app] Agent 已接入（B）');
+    console.log('[app] Agent 已接入（B），工具数：', tools.list().length);
   } catch (e) { console.error('[app] Agent init failed:', e); }
 } else {
   console.log('[app] Agent 未接入，聊天面板走占位回显');
+}
+
+// ---------- B：Scheduler 启动（定时提醒 / 每日早报）----------
+if (typeof window.Scheduler === 'function' && window.scheduleStore) {
+  try {
+    window.__scheduler = new window.Scheduler(eventBus, window.scheduleStore);
+    window.__scheduler.start();
+    console.log('[app] Scheduler 已启动（每分钟扫描到期日程）');
+  } catch (e) { console.error('[app] Scheduler init failed:', e); }
 }
 
 // ---------- 状态事件 → 气泡 / 动画（接口文档 §5.4）----------
