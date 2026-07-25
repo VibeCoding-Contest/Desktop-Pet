@@ -17,7 +17,13 @@ class LLMClient {
   }
 
   async chat({ messages, tools = [] }) {
-    if (this.provider === 'openai') return this._openai(messages, tools);
+    if (this.provider === 'openai') {
+      if (!this.apiKey) {
+        console.warn('[llm] provider=openai 但未填 apiKey，临时回退 mock。填好 Key 后重启即可联网。');
+        return this._mock(messages, tools);
+      }
+      return this._openai(messages, tools);
+    }
     if (this.provider === 'ollama') return this._ollama(messages, tools);
     return this._mock(messages, tools);
   }

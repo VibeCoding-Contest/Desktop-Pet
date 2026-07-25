@@ -40,6 +40,23 @@ fi
 export LD_LIBRARY_PATH="$LIBS_DIR:${LD_LIBRARY_PATH:-}"
 export DISPLAY="${DISPLAY:-:0}"
 
+# ---------- 中文输入法（IME）----------
+# Chromium/Electron 必须拿到 GTK_IM_MODULE/XMODIFIERS 才会接管 fcitx5/ibus，
+# 否则从终端启动时输入框打不出中文。已设置则尊重用户环境，未设置则按已安装的 IME 自动补上。
+if [ -z "${GTK_IM_MODULE:-}" ]; then
+  if command -v fcitx5 >/dev/null 2>&1 || command -v fcitx >/dev/null 2>&1; then
+    export GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx XMODIFIERS=@im=fcitx
+  elif command -v ibus-daemon >/dev/null 2>&1; then
+    export GTK_IM_MODULE=ibus QT_IM_MODULE=ibus XMODIFIERS=@im=ibus
+  fi
+fi
+
+# 已装 fcitx5 但未运行时，自动起一个（setsid 脱离终端进程组防被杀；禁 waylandim，
+# 因为 GNOME/Wayland 不给它绑定 input_method 权限会拖崩进程，XWayland 走 XIM/XCB 足够）
+if command -v fcitx5 >/dev/null 2>&1 && ! pgrep -x fcitx5 >/dev/null 2>&1; then
+  setsid fcitx5 --disable=waylandim >/dev/null 2>&1 < /dev/null &
+fi
+
 # 关闭 GPU/Sandbox 以兼容无显卡/容器环境（与原配置一致）
 exec ./node_modules/electron/dist/electron . \
   --disable-gpu \

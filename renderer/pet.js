@@ -23,10 +23,6 @@ class Pet {
     this._autoEnabled = false;
     this._autoTimer = null;
     this._idleSince = Date.now();
-
-    // 彩色泡泡背景（替代单调的透明框）
-    this._bubbles = [];
-    this._initBubbles();
   }
 
   setState(newState, options = {}) {
@@ -68,7 +64,6 @@ class Pet {
       }
     }
     this._updateMovement(deltaTime);
-    this._updateBubbles(deltaTime);
   }
 
   _finishOneShot() {
@@ -130,72 +125,9 @@ class Pet {
     this.y += (dy / dist) * step;
   }
 
-  // ---------- 彩色动感泡泡背景 ----------
-  _initBubbles() {
-    const W = this.canvas.width || 320, H = this.canvas.height || 320;
-    const COLORS = [
-      '255,179,186', '255,223,186', '255,255,186', '186,255,201',
-      '186,225,255', '212,186,255', '255,186,236', '186,255,255',
-    ];
-    const N = 12;
-    this._bubbles = [];
-    for (let i = 0; i < N; i++) {
-      const r = 10 + Math.random() * 20;
-      this._bubbles.push({
-        x: Math.random() * W,
-        y: Math.random() * H,
-        r,
-        rgb: COLORS[Math.floor(Math.random() * COLORS.length)],
-        vy: 0.12 + Math.random() * 0.45,      // 上升速度
-        wobble: Math.random() * Math.PI * 2,  // 水平摆动相位
-        wobbleAmp: 4 + Math.random() * 12,
-        wobbleSpd: 0.0012 + Math.random() * 0.0028,
-        pulse: Math.random() * Math.PI * 2,   // 大小呼吸相位
-        pulseSpd: 0.0018 + Math.random() * 0.002,
-        alpha: 0.5 + Math.random() * 0.32,
-      });
-    }
-  }
-
-  _updateBubbles(dt) {
-    const W = this.canvas.width || 320, H = this.canvas.height || 320;
-    const d = Math.min(2.5, dt / 16.6667); // 归一化到 ~60fps，并限制大跨度
-    for (const b of this._bubbles) {
-      b.y -= b.vy * d;
-      b.wobble += b.wobbleSpd * dt;
-      b.pulse += b.pulseSpd * dt;
-      if (b.y + b.r < 0) {            // 升出顶部 → 回到底部重生
-        b.y = H + b.r;
-        b.x = Math.random() * W;
-      }
-    }
-  }
-
-  _drawBubbles(ctx) {
-    for (const b of this._bubbles) {
-      const x = b.x + Math.sin(b.wobble) * b.wobbleAmp;
-      const r = b.r * (1 + Math.sin(b.pulse) * 0.08);
-      // 主体：白心 → 彩色 → 透明边的径向渐变（泡泡质感）
-      const g = ctx.createRadialGradient(x - r * 0.3, b.y - r * 0.3, r * 0.1, x, b.y, r);
-      g.addColorStop(0, 'rgba(255,255,255,0.95)');
-      g.addColorStop(0.4, `rgba(${b.rgb},${b.alpha})`);
-      g.addColorStop(1, `rgba(${b.rgb},0.05)`);
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(x, b.y, r, 0, Math.PI * 2);
-      ctx.fill();
-      // 高光小点
-      ctx.fillStyle = 'rgba(255,255,255,0.78)';
-      ctx.beginPath();
-      ctx.arc(x - r * 0.35, b.y - r * 0.35, r * 0.18, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
   draw() {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this._drawBubbles(ctx);
     const renderer = Pet.TYPES[this.petType];
     if (!renderer) return;
     if (renderer.init && Pet._ready[this.petType] !== 'ready') return;
@@ -417,6 +349,14 @@ class Pet {
       ctx.stroke();
       return;
     }
+    if (style === 'closed') {
+      ctx.strokeStyle = '#222'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(lx - 4, ey); ctx.lineTo(lx + 4, ey);
+      ctx.moveTo(rx - 4, ey); ctx.lineTo(rx + 4, ey);
+      ctx.stroke();
+      return;
+    }
     if (style === 'half') {
       ctx.beginPath();
       ctx.arc(lx, ey, 3, 0, Math.PI * 2);
@@ -503,6 +443,13 @@ Pet.registerAction('jump', { frames: 6, duration: 90, loop: false, oneShot: true
 Pet.registerAction('sit', { frames: 2, duration: 400, loop: false, oneShot: true, autoWeight: 1 });
 Pet.registerAction('yawn', { frames: 4, duration: 220, loop: false, oneShot: true, autoWeight: 1 });
 Pet.registerAction('sad', { frames: 2, duration: 320, loop: true, oneShot: false, autoWeight: 0 });
+// 新增：让宠物（尤其狗狗）动作更丰富，空闲 5s 后随机触发
+Pet.registerAction('sleep', { frames: 8, duration: 700, loop: false, oneShot: true, autoWeight: 2, getAnim: (s, ph) => ({ scaleY: 1 + Math.sin(ph * Math.PI * 2) * 0.035, eye: 'closed', mouth: 'sleep' }) });
+Pet.registerAction('bark', { frames: 6, duration: 100, loop: false, oneShot: true, autoWeight: 1, getAnim: (s, ph) => ({ bob: -Math.abs(Math.sin(ph * Math.PI)) * 3, eye: 'wide', mouth: 'bark', mouthOpen: 0.85 }) });
+Pet.registerAction('sniff', { frames: 4, duration: 260, loop: false, oneShot: true, autoWeight: 2, getAnim: () => ({ bob: 2, eye: 'normal', mouth: 'smile' }) });
+Pet.registerAction('happy', { frames: 6, duration: 140, loop: false, oneShot: true, autoWeight: 2, getAnim: (s, ph) => ({ bob: -Math.abs(Math.sin(ph * Math.PI * 2)) * 5, eye: 'content', mouth: 'smile' }) });
+Pet.registerAction('roll', { frames: 10, duration: 130, loop: false, oneShot: true, autoWeight: 1, getAnim: (s, ph) => ({ tilt: Math.sin(ph * Math.PI * 4) * 0.22, eye: 'content', mouth: 'smile' }) });
+Pet.registerAction('look', { frames: 8, duration: 300, loop: false, oneShot: true, autoWeight: 2, getAnim: (s, ph) => ({ tilt: Math.sin(ph * Math.PI * 4) * 0.08, eye: 'normal', mouth: 'smile' }) });
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { Pet };

@@ -3,6 +3,9 @@
 // 不依赖 B 的 agent.js 实现；B 未接入时发消息走占位回显，便于自测。
 // 接口契约见《人员A-Agent升级工作规划》§4.2。
 
+const AVATAR_PAW = `<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="6" cy="9" r="2.1" fill="#fff"/><circle cx="9.6" cy="5.6" r="2.1" fill="#fff"/><circle cx="14.4" cy="5.6" r="2.1" fill="#fff"/><circle cx="18" cy="9" r="2.1" fill="#fff"/><ellipse cx="12" cy="15.2" rx="4.6" ry="4" fill="#fff"/></svg>`;
+const AVATAR_USER = `<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="8" r="3.8" fill="#fff"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6z" fill="#fff"/></svg>`;
+
 class Chat {
   constructor(panelEl, eventBus) {
     this.el = panelEl;
@@ -14,6 +17,8 @@ class Chat {
     this.closeBtn = panelEl.querySelector('.chat-close');
     this._open = false;
     this._lastAgentEl = null; // 流式追加目标
+    this._composing = false; // 中文输入法组词状态（显式追踪，比 isComposing 更可靠）
+    this._compositionEndedAt = -Infinity; // 兼容 compositionend 早于确认 Enter 的输入法
 
     this._bind();
     this._wireEvents();
@@ -22,12 +27,25 @@ class Chat {
   _bind() {
     if (this.sendBtn) this.sendBtn.addEventListener('click', (e) => { e.preventDefault(); this._send(); });
     if (this.input) {
+      // 显式追踪输入法组词：compositionstart→end 之间的 Enter 是"选词确认"，绝不发送
+      this.input.addEventListener('compositionstart', () => { this._composing = true; });
+      this.input.addEventListener('compositionupdate', () => { this._composing = true; });
+      this.input.addEventListener('compositionend', () => {
+        this._composing = false;
+        this._compositionEndedAt = performance.now();
+        this._autosize();
+      });
       this.input.addEventListener('keydown', (e) => {
-        // 中文输入法组词时 Enter 用来选词，不能当发送（isComposing / keyCode 229）
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+        if (e.key !== 'Enter' || e.shiftKey) return;
+        // 某些中文 IME 会先 compositionend，再补发同一次确认 Enter；短暂保护该 Enter。
+        const justCommitted = performance.now() - this._compositionEndedAt < 100;
+        if (this._composing || e.isComposing || e.keyCode === 229) return;
+        if (justCommitted) {
           e.preventDefault();
-          this._send();
+          return;
         }
+        e.preventDefault();
+        this._send();
       });
       // 自适应高度
       this.input.addEventListener('input', () => this._autosize());
@@ -64,6 +82,7 @@ class Chat {
     this.addMessage('user', text);
     this.input.value = '';
     this._autosize();
+    this.input.focus({ preventScroll: true });
     this.eventBus.emit('chat:userMessage', { text });
 
     // B 未接入时的占位回显（收到真实 agent:reply 后会被覆盖）
@@ -77,14 +96,19 @@ class Chat {
   }
 
   addMessage(role, text) {
+    const isUser = role === 'user';
     const el = document.createElement('div');
-    el.className = 'chat-message chat-message--' + (role === 'user' ? 'user' : 'agent');
+    el.className = 'chat-message chat-message--' + (isUser ? 'user' : 'agent');
+    const av = document.createElement('div');
+    av.className = 'chat-avatar chat-avatar--' + (isUser ? 'user' : 'agent');
+    av.innerHTML = isUser ? AVATAR_USER : AVATAR_PAW;
     const bubble = document.createElement('div');
     bubble.className = 'chat-bubble';
     bubble.textContent = text;
+    el.appendChild(av);
     el.appendChild(bubble);
     this.messagesEl.appendChild(el);
-    this._lastAgentEl = role === 'agent' ? bubble : this._lastAgentEl;
+    this._lastAgentEl = isUser ? this._lastAgentEl : bubble;
     this._scrollBottom();
   }
 
@@ -98,7 +122,7 @@ class Chat {
   setTyping(label) {
     if (!this.typingEl) return;
     this.typingEl.textContent = label || '';
-    this.typingEl.style.display = label ? 'block' : 'none';
+    this.typingEl.style.display = label ? 'flex' : 'none';
   }
   clearTyping() { this.setTyping(''); }
 
@@ -109,7 +133,7 @@ class Chat {
   open() {
     this._open = true;
     this.el.classList.add('chat-panel--open');
-    if (this.input) this.input.focus();
+    this.focusInput();
     this.eventBus.emit('chat:open');
   }
   close() {
@@ -119,6 +143,9 @@ class Chat {
   }
   toggle() { this._open ? this.close() : this.open(); }
   get isOpen() { return this._open; }
+  focusInput() {
+    if (this.input) this.input.focus({ preventScroll: true });
+  }
 
   // B 的 agent.js 就绪后可调用此方法，关闭占位回显
   markAgentReady() { this._agentAlive = true; }
