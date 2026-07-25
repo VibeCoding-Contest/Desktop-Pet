@@ -20,6 +20,11 @@ contextBridge.exposeInMainWorld('petAPI', {
   saveData: (data) => ipcRenderer.send('save-data', data),
   loadData: () => ipcRenderer.invoke('load-data'),
 
+  // 自定义形象持久化（升级功能）
+  saveCustomPet:  (config) => ipcRenderer.invoke('save-custom-pet', config),
+  loadCustomPets: ()        => ipcRenderer.invoke('load-custom-pets'),
+  deleteCustomPet:(id)      => ipcRenderer.invoke('delete-custom-pet', id),
+
   // 托盘 / 退出
   minimizeToTray: () => ipcRenderer.send('minimize-to-tray'),
   closeApp: () => ipcRenderer.send('close-app'),
