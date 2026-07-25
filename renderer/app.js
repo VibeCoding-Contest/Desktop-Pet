@@ -189,6 +189,7 @@ function updateRoam(dt) {
 
 canvas.addEventListener('mousedown', async (e) => {
   if (e.button !== 0) return;
+  if (chat.isOpen) return;
   isDragging = true;
   mightClick = true;
   dragStartScreenX = e.screenX;
@@ -251,11 +252,7 @@ window.addEventListener('mouseup', async (e) => {
   dragRAF = null;
   updateStatusBarPosition();
   if (mightClick) {
-    if (roamEnabled) {
-      stopRoam();
-    } else {
-      resumeRoam();
-    }
+    stopRoam();
     eventBus.emit('pet:clicked', { x: e.clientX, y: e.clientY });
     pet.jump();
     status.play(10);
@@ -294,11 +291,15 @@ canvas.addEventListener('contextmenu', (e) => {
   menu.show(e.clientX, e.clientY);
 });
 
-// ---------- 跟随鼠标 F10（里程碑5）----------
+// ---------- 双击：开始漫游 / 跟随鼠标 F10 ----------
 canvas.addEventListener('dblclick', (e) => {
   e.preventDefault();
+  if (!roamEnabled) {
+    resumeRoam();
+    return;
+  }
   followMode = true;
-  setClickThrough(false); // 跟随期间保持可交互
+  setClickThrough(false);
   if (followTimer) clearTimeout(followTimer);
   followTimer = setTimeout(() => { followMode = false; }, FOLLOW_DURATION);
 });
@@ -376,6 +377,39 @@ window.addEventListener('keydown', (e) => {
     chat.close();
   }
 });
+
+// ---------- 聊天面板打开/关闭时调整窗口大小 ----------
+let savedWinW = 360;
+let savedWinH = 360;
+
+eventBus.on('chat:open', async () => {
+  stopRoam();
+  const bounds = await window.petAPI.getWindowBounds();
+  if (bounds) {
+    savedWinW = bounds.width;
+    savedWinH = bounds.height;
+  }
+  await fitWindowToScreen(600, 500);
+});
+
+eventBus.on('chat:close', async () => {
+  await fitWindowToScreen(savedWinW, savedWinH);
+});
+
+async function fitWindowToScreen(w, h) {
+  const bounds = await window.petAPI.getWindowBounds();
+  const scr = await window.petAPI.getScreenSize();
+  if (!bounds || !scr) {
+    window.petAPI.resizeWindow(w, h);
+    return;
+  }
+  let nx = bounds.x;
+  let ny = bounds.y;
+  if (nx + w > scr.width) nx = Math.max(0, scr.width - w);
+  if (ny + h > scr.height) ny = Math.max(0, scr.height - h);
+  window.petAPI.resizeWindow(w, h);
+  window.petAPI.setWindowPosition(nx, ny);
+}
 
 // ---------- A 的编排骨架：agent:* 事件 → 聊天/气泡呈现 ----------
 // B 的 Agent 内核就绪前，chat 占位回显；就绪后真实回复经 agent:reply 走这里
