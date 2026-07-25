@@ -1,0 +1,31 @@
+node_modules/
+
+# electron-builder output
+dist/
+release/
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.snap
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# env & logs
+.env
+*.log
+npm-debug.log*
+
+# electron-builder configuration output (keep empty dir in git, gitignore handles files)
+build/*
+
+# saved state (user-specific)
+!build/.gitkeep
