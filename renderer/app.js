@@ -79,6 +79,14 @@ function setClickThrough(enable) {
   window.petAPI.setClickThrough(enable);
 }
 
+function updateStatusBarPosition() {
+  const rect = canvas.getBoundingClientRect();
+  const b = pet.getBounds();
+  const x = rect.left + b.x;
+  const y = rect.top + b.y + b.height + 4;
+  status.setBarPosition(x, y);
+}
+
 canvas.addEventListener('mousedown', async (e) => {
   if (e.button !== 0) return;
   isDragging = true;
@@ -106,6 +114,7 @@ window.addEventListener('mousemove', (e) => {
       dragTargetX = dragStartWinX + (e.screenX - dragStartScreenX);
       dragTargetY = dragStartWinY + (e.screenY - dragStartScreenY);
       eventBus.emit('pet:dragging', { dx: e.screenX - dragStartScreenX, dy: e.screenY - dragStartScreenY });
+      updateStatusBarPosition();
       if (!dragRAF) {
         dragRAF = requestAnimationFrame(() => {
           dragRAF = null;
@@ -135,6 +144,7 @@ window.addEventListener('mouseup', async (e) => {
   isDragging = false;
   cancelAnimationFrame(dragRAF);
   dragRAF = null;
+  updateStatusBarPosition();
   if (mightClick) {
     eventBus.emit('pet:clicked', { x: e.clientX, y: e.clientY });
     pet.jump();
@@ -191,6 +201,7 @@ function showBubble(type, options) {
 }
 
 // ---------- 菜单事件路由（接口文档 §5.3）----------
+eventBus.on('pet:moveEnd', () => updateStatusBarPosition());
 eventBus.on('menu:exit', async () => {
   await saveState();
   window.petAPI.closeApp();
@@ -347,6 +358,7 @@ async function init() {
 
   await loadState();
   status.createStatusBar(document.body);
+  updateStatusBarPosition();
   status.start();
   pet.startAutoBehavior();
   lastTime = performance.now();

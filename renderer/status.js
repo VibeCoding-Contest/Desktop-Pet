@@ -101,6 +101,12 @@ class Status {
     });
   }
 
+  setBarPosition(x, y) {
+    if (!this._barEl) return;
+    this._barEl.style.left = x + 'px';
+    this._barEl.style.top = y + 'px';
+  }
+
   _checkThresholds() {
     if (this.hunger < 10 && !this._starvingFired) {
       this._starvingFired = true;
