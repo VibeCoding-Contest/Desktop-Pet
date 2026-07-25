@@ -14,15 +14,6 @@ class Pet {
     this.currentFrame = 0;
     this.frameTimer = 0;
 
-    this.ANIM = {
-      idle: { frames: 4, duration: 180, loop: true, oneShot: false },
-      walk: { frames: 4, duration: 120, loop: true, oneShot: false },
-      jump: { frames: 6, duration: 90, loop: false, oneShot: true },
-      sit: { frames: 2, duration: 400, loop: false, oneShot: true },
-      yawn: { frames: 4, duration: 220, loop: false, oneShot: true },
-      sad: { frames: 2, duration: 320, loop: true, oneShot: false },
-    };
-
     this._stateResolve = null;
     this._moveTarget = null;
     this._moveSpeed = 60;
@@ -33,7 +24,7 @@ class Pet {
   }
 
   setState(newState, options = {}) {
-    const cfg = this.ANIM[newState];
+    const cfg = Pet.ACTIONS[newState];
     if (!cfg) return;
     const force = options.force === true;
     if (this.state === newState && !force) return;
@@ -50,7 +41,7 @@ class Pet {
   }
 
   update(deltaTime) {
-    const cfg = this.ANIM[this.state];
+    const cfg = Pet.ACTIONS[this.state];
     if (cfg) {
       this.frameTimer += deltaTime;
       while (this.frameTimer >= cfg.duration) {
@@ -106,18 +97,45 @@ class Pet {
   draw() {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    const cfg = this.ANIM[this.state];
+    const renderer = Pet.TYPES[this.petType];
+    if (!renderer) return;
+    if (renderer.init && Pet._ready[this.petType] !== 'ready') return;
+    const cfg = Pet.ACTIONS[this.state];
     const phase = cfg
       ? (this.currentFrame + this.frameTimer / cfg.duration) / cfg.frames
       : 0;
+    const a = this._computeAnim(this.state, phase);
     const cx = this.x + this.width / 2;
     const cy = this.y + this.height / 2;
-    this._drawPet(ctx, cx, cy, this.state, phase);
+    ctx.save();
+    ctx.translate(cx, cy + a.bob);
+    ctx.rotate(a.tilt);
+    ctx.scale(1, a.scaleY);
+    renderer.draw(ctx, {
+      r: 18,
+      state: this.state,
+      phase,
+      eye: a.eye,
+      mouth: a.mouth,
+      mouthOpen: a.mouthOpen,
+      legSwing: a.legSwing,
+      palette: renderer.palette,
+      utils: { eyes: Pet.eyes, mouth: Pet.mouth, tear: Pet.tear },
+      self: this,
+    });
+    ctx.restore();
   }
 
   setPetType(type) {
-    if (!['cat', 'dog', 'penguin'].includes(type)) return;
+    const renderer = Pet.TYPES[type];
+    if (!renderer) return;
     this.petType = type;
+    if (renderer.init && Pet._ready[type] !== 'ready') {
+      Pet._ready[type] = 'pending';
+      Promise.resolve(renderer.init(this))
+        .then(() => { Pet._ready[type] = 'ready'; })
+        .catch(() => { Pet._ready[type] = 'failed'; });
+    }
     this.setState('idle', { force: true });
   }
 
@@ -163,9 +181,20 @@ class Pet {
       return;
     }
     if (Date.now() - this._idleSince < 5000) return;
-    const behaviors = ['walk', 'sit', 'yawn'];
-    const b = behaviors[Math.floor(Math.random() * behaviors.length)];
-    this._triggerAuto(b);
+    const names = [], weights = [];
+    let total = 0;
+    for (const name in Pet.ACTIONS) {
+      const w = Pet.ACTIONS[name].autoWeight || 0;
+      if (w > 0) { names.push(name); weights.push(w); total += w; }
+    }
+    if (!total) return;
+    let r = Math.random() * total;
+    let pick = names[0];
+    for (let i = 0; i < names.length; i++) {
+      r -= weights[i];
+      if (r <= 0) { pick = names[i]; break; }
+    }
+    this._triggerAuto(pick);
   }
 
   _triggerAuto(behavior) {
@@ -199,152 +228,69 @@ class Pet {
     this.stopAutoBehavior();
   }
 
-  _palette() {
-    const palettes = {
-      cat: { body: '#FFB347', dark: '#E8922C', ear: '#FFB347' },
-      dog: { body: '#C79554', dark: '#A6763B', ear: '#B07A3A' },
-      penguin: { body: '#3A3A3A', dark: '#1E1E1E', ear: null, belly: '#FFFFFF', beak: '#FFB347' },
-    };
-    return palettes[this.petType] || palettes.cat;
+  static TYPES = {};
+  static _ready = {};
+  static ACTIONS = {};
+
+  static registerType(name, renderer) {
+    if (!name || !renderer || typeof renderer.draw !== 'function') return false;
+    Pet.TYPES[name] = renderer;
+    Pet._ready[name] = renderer.init ? 'pending' : 'ready';
+    return true;
   }
 
-  _drawPet(ctx, cx, cy, state, phase) {
-    const p = this._palette();
-    const TAU = Math.PI * 2;
-    let bodyY = cy;
-    let scaleY = 1;
-    let tilt = 0;
-    let eye = 'normal';
-    let mouth = 'smile';
-    let mouthOpen = 0;
-    let legSwing = 0;
+  static registerAction(name, desc) {
+    if (!name || !desc || !desc.frames || !desc.duration) return false;
+    Pet.ACTIONS[name] = {
+      frames: desc.frames,
+      duration: desc.duration,
+      loop: !!desc.loop,
+      oneShot: !!desc.oneShot,
+      autoWeight: desc.autoWeight || 0,
+      getAnim: typeof desc.getAnim === 'function' ? desc.getAnim : null,
+    };
+    return true;
+  }
 
+  _computeAnim(state, phase) {
+    const TAU = Math.PI * 2;
+    const base = { bob: 0, scaleY: 1, tilt: 0, eye: 'normal', mouth: 'smile', mouthOpen: 0, legSwing: 0 };
     switch (state) {
       case 'idle':
-        bodyY = cy + Math.sin(phase * TAU) * 1.5;
-        mouthOpen = 0;
+        base.bob = Math.sin(phase * TAU) * 1.5;
         break;
       case 'walk':
-        bodyY = cy + Math.sin(phase * TAU) * 1.5;
-        tilt = Math.sin(phase * TAU * 2) * 0.08;
-        legSwing = Math.sin(phase * TAU * 2) * 4;
+        base.bob = Math.sin(phase * TAU) * 1.5;
+        base.tilt = Math.sin(phase * TAU * 2) * 0.08;
+        base.legSwing = Math.sin(phase * TAU * 2) * 4;
         break;
       case 'jump':
-        bodyY = cy - Math.sin(phase * Math.PI) * 22;
-        eye = 'wide';
-        mouth = 'o';
-        mouthOpen = 0.6;
+        base.bob = -Math.sin(phase * Math.PI) * 22;
+        base.eye = 'wide'; base.mouth = 'o'; base.mouthOpen = 0.6;
         break;
       case 'sit':
-        scaleY = 0.72;
-        bodyY = cy + 3;
-        eye = 'content';
+        base.scaleY = 0.72; base.bob = 3; base.eye = 'content';
         break;
       case 'yawn':
-        eye = 'half';
-        mouth = 'yawn';
-        mouthOpen = (Math.sin(phase * TAU) * 0.5 + 0.5) * 0.8 + 0.1;
+        base.eye = 'half'; base.mouth = 'yawn';
+        base.mouthOpen = (Math.sin(phase * TAU) * 0.5 + 0.5) * 0.8 + 0.1;
         break;
       case 'sad':
-        bodyY = cy + 3;
-        eye = 'sad';
-        mouth = 'frown';
+        base.bob = 3; base.eye = 'sad'; base.mouth = 'frown';
         break;
       default:
         break;
     }
-
-    ctx.save();
-    ctx.translate(cx, bodyY);
-    ctx.rotate(tilt);
-    ctx.scale(1, scaleY);
-
-    const r = 18;
-    this._drawLegs(ctx, r, legSwing, p);
-    this._drawTail(ctx, r, p);
-
-    ctx.fillStyle = p.body;
-    ctx.strokeStyle = p.dark;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, TAU);
-    ctx.fill();
-    ctx.stroke();
-
-    if (this.petType === 'penguin') {
-      ctx.fillStyle = p.belly;
-      ctx.beginPath();
-      ctx.ellipse(0, 2, r * 0.55, r * 0.62, 0, 0, TAU);
-      ctx.fill();
-      this._drawBeak(ctx, 0, 4, p);
-    } else {
-      this._drawEars(ctx, 0, -r, p);
-    }
-
-    const eyeY = -2;
-    this._drawEyes(ctx, -7, 7, eyeY, eye);
-    this._drawMouth(ctx, 0, 8, mouth, mouthOpen);
-
-    if (state === 'sad') this._drawTear(ctx, -10, 2, phase);
-
-    ctx.restore();
+    const act = Pet.ACTIONS[state];
+    if (act && typeof act.getAnim === 'function') Object.assign(base, act.getAnim(state, phase));
+    return base;
   }
 
-  _drawLegs(ctx, r, swing, p) {
-    ctx.fillStyle = p.dark;
-    ctx.beginPath();
-    ctx.ellipse(-7, r - 2 + swing, 4, 5, 0, 0, Math.PI * 2);
-    ctx.ellipse(7, r - 2 - swing, 4, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  _drawTail(ctx, r, p) {
-    if (this.petType === 'penguin') return;
-    ctx.strokeStyle = p.dark;
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(r - 2, 4);
-    ctx.quadraticCurveTo(r + 10, 0, r + 12, -8);
-    ctx.stroke();
-  }
-
-  _drawEars(ctx, cx, topY, p) {
-    if (!p.ear) return;
-    ctx.fillStyle = p.body;
-    ctx.strokeStyle = p.dark;
-    ctx.lineWidth = 2;
-    const ear = (sign) => {
-      ctx.beginPath();
-      ctx.moveTo(cx + sign * 6, topY + 4);
-      ctx.lineTo(cx + sign * 12, topY - 10);
-      ctx.lineTo(cx + sign * 2, topY - 4);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    };
-    ear(-1);
-    ear(1);
-  }
-
-  _drawBeak(ctx, cx, cy, p) {
-    ctx.fillStyle = p.beak;
-    ctx.strokeStyle = '#C97A1F';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(cx - 5, cy - 2);
-    ctx.lineTo(cx + 5, cy - 2);
-    ctx.lineTo(cx, cy + 5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  _drawEyes(ctx, lx, rx, ey, style) {
+  static eyes(ctx, lx, rx, ey, style, radius) {
+    radius = radius || 2.5;
     ctx.fillStyle = '#222';
     if (style === 'content') {
-      ctx.strokeStyle = '#222';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(lx, ey, 3, Math.PI, 0);
       ctx.arc(rx, ey, 3, Math.PI, 0);
@@ -352,18 +298,14 @@ class Pet {
       return;
     }
     if (style === 'half') {
-      ctx.fillStyle = '#222';
       ctx.beginPath();
       ctx.arc(lx, ey, 3, 0, Math.PI * 2);
       ctx.arc(rx, ey, 3, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#222';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(lx - 5, ey - 4);
-      ctx.lineTo(lx + 5, ey - 4);
-      ctx.moveTo(rx - 5, ey - 4);
-      ctx.lineTo(rx + 5, ey - 4);
+      ctx.moveTo(lx - 5, ey - 4); ctx.lineTo(lx + 5, ey - 4);
+      ctx.moveTo(rx - 5, ey - 4); ctx.lineTo(rx + 5, ey - 4);
       ctx.stroke();
       return;
     }
@@ -373,9 +315,7 @@ class Pet {
       ctx.arc(lx, ey, 4, 0, Math.PI * 2);
       ctx.arc(rx, ey, 4, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#222';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      ctx.strokeStyle = '#222'; ctx.lineWidth = 1.5; ctx.stroke();
       ctx.fillStyle = '#222';
       ctx.beginPath();
       ctx.arc(lx, ey, 2, 0, Math.PI * 2);
@@ -384,32 +324,25 @@ class Pet {
       return;
     }
     if (style === 'sad') {
-      ctx.strokeStyle = '#222';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(lx - 3, ey - 3);
-      ctx.lineTo(lx + 3, ey + 1);
-      ctx.moveTo(lx + 3, ey - 3);
-      ctx.lineTo(lx - 3, ey + 1);
-      ctx.moveTo(rx - 3, ey - 3);
-      ctx.lineTo(rx + 3, ey + 1);
-      ctx.moveTo(rx + 3, ey - 3);
-      ctx.lineTo(rx - 3, ey + 1);
+      ctx.moveTo(lx - 3, ey - 3); ctx.lineTo(lx + 3, ey + 1);
+      ctx.moveTo(lx + 3, ey - 3); ctx.lineTo(lx - 3, ey + 1);
+      ctx.moveTo(rx - 3, ey - 3); ctx.lineTo(rx + 3, ey + 1);
+      ctx.moveTo(rx + 3, ey - 3); ctx.lineTo(rx - 3, ey + 1);
       ctx.stroke();
       return;
     }
     ctx.beginPath();
-    ctx.arc(lx, ey, 2.5, 0, Math.PI * 2);
-    ctx.arc(rx, ey, 2.5, 0, Math.PI * 2);
+    ctx.arc(lx, ey, radius, 0, Math.PI * 2);
+    ctx.arc(rx, ey, radius, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  _drawMouth(ctx, cx, cy, style, openness) {
-    ctx.strokeStyle = '#222';
-    ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
+  static mouth(ctx, cx, cy, style, open) {
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 2; ctx.lineCap = 'round';
     if (style === 'o' || style === 'yawn') {
-      const h = 3 + openness * 6;
+      const h = 3 + open * 6;
       ctx.fillStyle = '#7A3B3B';
       ctx.beginPath();
       ctx.ellipse(cx, cy + h / 2, 4, h, 0, 0, Math.PI * 2);
@@ -427,7 +360,7 @@ class Pet {
     ctx.stroke();
   }
 
-  _drawTear(ctx, x, y, phase) {
+  static tear(ctx, x, y, phase) {
     ctx.fillStyle = '#7EC8FF';
     const drop = (Math.sin(phase * Math.PI * 2) * 0.5 + 0.5) * 6;
     ctx.beginPath();
@@ -435,6 +368,21 @@ class Pet {
     ctx.fill();
   }
 }
+
+if (typeof require !== 'undefined' && typeof module !== 'undefined' && module.exports) {
+  try {
+    Pet.registerType('cat', require('./pets/cat.js'));
+    Pet.registerType('dog', require('./pets/dog.js'));
+    Pet.registerType('penguin', require('./pets/penguin.js'));
+  } catch (e) { void 0; }
+}
+
+Pet.registerAction('idle', { frames: 4, duration: 180, loop: true, oneShot: false, autoWeight: 0 });
+Pet.registerAction('walk', { frames: 4, duration: 120, loop: true, oneShot: false, autoWeight: 1 });
+Pet.registerAction('jump', { frames: 6, duration: 90, loop: false, oneShot: true, autoWeight: 0 });
+Pet.registerAction('sit', { frames: 2, duration: 400, loop: false, oneShot: true, autoWeight: 1 });
+Pet.registerAction('yawn', { frames: 4, duration: 220, loop: false, oneShot: true, autoWeight: 1 });
+Pet.registerAction('sad', { frames: 2, duration: 320, loop: true, oneShot: false, autoWeight: 0 });
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { Pet };

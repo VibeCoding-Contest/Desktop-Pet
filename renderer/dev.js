@@ -65,6 +65,20 @@
   mk(actEl, '自动行为 ON', function () { pet.startAutoBehavior(); log('startAutoBehavior'); });
   mk(actEl, '自动行为 OFF', function () { pet.stopAutoBehavior(); log('stopAutoBehavior'); });
 
+  Pet.registerAction('dance', {
+    frames: 8, duration: 110, loop: false, oneShot: true, autoWeight: 0,
+    getAnim: function (state, phase) {
+      var TAU = Math.PI * 2;
+      return {
+        bob: Math.sin(phase * TAU * 2) * 3,
+        tilt: Math.sin(phase * TAU) * 0.28,
+        eye: 'content', mouth: 'smile', mouthOpen: 0,
+        legSwing: Math.sin(phase * TAU * 2) * 3, scaleY: 1,
+      };
+    },
+  });
+  mk(actEl, 'dance(自定义动作)', function () { pet.setState('dance', { force: true }); log('dance'); });
+
   var simEl = document.getElementById('sim');
   mk(simEl, '心情低落(status:sad)', function () { bus.emit('status:sad', { mood: 15 }); });
   mk(simEl, '心情恢复(status:happy)', function () { bus.emit('status:happy', { mood: 90 }); });
