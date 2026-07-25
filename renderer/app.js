@@ -189,7 +189,7 @@ function updateRoam(dt) {
 
 canvas.addEventListener('mousedown', async (e) => {
   if (e.button !== 0) return;
-  if (chat.isOpen) return;
+  if (chat.isOpen || (typeof PetCreator !== 'undefined' && PetCreator._current)) return;
   isDragging = true;
   mightClick = true;
   dragStartScreenX = e.screenX;
@@ -241,7 +241,7 @@ window.addEventListener('mousemove', (e) => {
     }
     return;
   }
-  if (menu.visible || chat.isOpen) { setClickThrough(false); return; }
+  if (menu.visible || chat.isOpen || (typeof PetCreator !== 'undefined' && PetCreator._current)) { setClickThrough(false); return; }
   setClickThrough(!isOverPet(e.clientX, e.clientY));
 });
 
