@@ -36,3 +36,6 @@ docs/人员B工作目录.md
 
 # LLM 本地配置（含 API Key，不入库；config.example.js 为模板）
 renderer/agent/config.local.js
+
+# 个人证件照（不入库）
+docs/证件照.jpg
