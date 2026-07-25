@@ -43,6 +43,7 @@ const bubble = new Bubble(document.getElementById('bubble-container'));
 eventBus.on('status:hungry', () => bubble.show('hungry'));
 eventBus.on('status:starving', () => bubble.show('hungry', { text: '我要饿死了！！！' }));
 eventBus.on('status:sad', () => bubble.show('sad'));
+eventBus.on('status:happy', () => bubble.show('happy'));
 eventBus.on('status:fed', () => bubble.show('feed'));
 eventBus.on('status:played', () => bubble.show('happy'));
 
@@ -60,7 +61,7 @@ eventBus.on('pet:clicked', data => {
   bubble.setPosition(data.x, data.y - 40);
 });
 
-// ---------- 阶段一自测：控制台手动验证 EventBus 事件流 ----------
+// ---------- 阶段二自测：控制台手动验证 EventBus 事件流 ----------
 window.__test = {
   listEvents() {
     const events = [];
@@ -99,6 +100,13 @@ window.__test = {
     status._checkThresholds();
     status.eventBus.emit('status:change', { hunger: status.hunger, mood: status.mood });
   },
+  highMood() {
+    console.log('[test] 模拟心情高涨：手动设置 mood=90');
+    status.mood = 90;
+    status._happyFired = false;
+    status._checkThresholds();
+    status.eventBus.emit('status:change', { hunger: status.hunger, mood: status.mood });
+  },
   showBubble(type, text) {
     console.log('[test] 直接显示气泡:', type, text);
     bubble.show(type, text ? { text } : undefined);
@@ -110,13 +118,14 @@ window.__test = {
 };
 
 console.log(
-  '%c[阶段一自测] 在控制台运行以下命令验证事件流：\n' +
+  '%c[阶段二自测] 在控制台运行以下命令验证事件流：\n' +
   '  __test.listEvents()  — 查看已注册事件\n' +
-  '  __test.feed()        — 模拟喂食 → 应看到气泡「好吃！」\n' +
-  '  __test.play()        — 模拟玩耍 → 应看到气泡「来玩吧！」\n' +
-  '  __test.lowHunger()   — 模拟饥饿触发 → 应看到气泡「好饿...」\n' +
-  '  __test.starve()      — 模拟极度饥饿 → 应看到气泡「我要饿死了！！！」\n' +
-  '  __test.lowMood()     — 模拟心情低落 → 应看到气泡「无聊...」\n' +
+  '  __test.feed()        — 模拟喂食 → 弹跳气泡「好吃！」\n' +
+  '  __test.play()        — 模拟玩耍 → 弹跳气泡「来玩吧！」\n' +
+  '  __test.lowHunger()   — 模拟饥饿 → 抖动气泡「好饿...」\n' +
+  '  __test.starve()      — 模拟极度饥饿 → 抖动气泡「我要饿死了！！！」\n' +
+  '  __test.lowMood()     — 模拟心情低落 → 摇摆气泡「无聊...」\n' +
+  '  __test.highMood()    — 模拟心情高涨 → 弹跳气泡「嘿嘿」\n' +
   '  __test.showBubble("happy") — 直接显示气泡\n' +
   '  __test.state()       — 查看当前状态值',
   'color: #4CAF50; font-size: 14px;'
