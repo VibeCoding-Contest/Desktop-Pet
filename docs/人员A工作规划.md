@@ -115,10 +115,10 @@
 - [ ] **自测**：右键弹菜单，点退出能关应用；点喂食/玩耍发出事件（B/C 接收后回显） —— 代码已写、语法校验通过；需本机验证（见 §十一）
 
 ### 里程碑 4：联调（1:15–1:30，全员）
-- [ ] app.js 串联：实例化 pet/status/bubble/menu，注入 eventBus
-- [ ] 打通「拖拽→移动」全链路
-- [ ] 打通「右键喂食→状态+气泡」全链路
-- [ ] 合并 PR 到 main
+- [x] app.js 串联：实例化 pet/status/bubble/menu，注入 eventBus
+- [x] 打通「拖拽→移动」全链路
+- [x] 打通「右键喂食→状态+气泡」全链路
+- [ ] 合并 PR 到 main —— 待执行
 
 ### 里程碑 5：跟随鼠标 F10（2:30–3:00，与 B 联调）
 - [ ] `app.js`：canvas `dblclick` → 2 秒内监听 mousemove，调 `pet.moveTo`
@@ -311,6 +311,60 @@ contextBridge.exposeInMainWorld('petAPI', {
 
 ### 11.6 下一步
 - 里程碑 4（联调）：app.js 实例化 `Pet`/`Status`/`Bubble` 并注入 eventBus，打通「拖拽→移动」「右键喂食→状态+气泡」全链路（B/C 模块已就绪，仅缺 `pet.js`）
+
+---
+
+## 十二、里程碑 4 实现记录（更新于 2026-07-25）
+
+> 进度背景：B 的 `pet.js` 已合并入 `origin/main`（feat/pet-animation，441 行）；本轮将 `origin/main` 合入 `feat/window` 并完成 app.js 联调。
+
+### 12.1 本次改动文件
+| 文件 | 改动 | 说明 |
+|------|------|------|
+| `renderer/app.js` | 重写 | 实例化 Pet/Status/Bubble/Menu 并注入 eventBus；渲染循环；点击→跳跃；菜单→状态→气泡；状态阈值→气泡/动画；最小持久化 |
+| `renderer/style.css` | 追加 | 补 `.bubble`/`.bubble--visible`/`.bubble-text`/`.bubble-arrow` 最小定位样式（C 未写 CSS，A 兜底以便联调可见） |
+| （合并）`renderer/pet.js` | 来自 origin/main | B 的 Pet 类，441 行 |
+
+### 12.2 串联结构（app.js init）
+```
+init()
+ ├─ loadState()              // 恢复 petType + status（窗口位置待 M6）
+ ├─ status.start()           // 启动每秒衰减
+ ├─ pet.startAutoBehavior()  // 空闲 5s 随机行为
+ └─ requestAnimationFrame(loop)  // pet.update(dt) + pet.draw()
+```
+
+### 12.3 事件链路（已打通）
+| 链路 | 流转 |
+|------|------|
+| 拖拽→移动 | `mousedown`(记录+关穿透) → 超阈值才 `moveWindow` → `mouseup`→`pet:dragEnd`(窗口坐标) |
+| 点击→跳跃(F6 提前) | `mouseup` 且未超阈值 → `pet:clicked` + `pet.jump()` + `status.play(10)` + `showBubble('happy')` |
+| 右键喂食 | `menu:feed` → `status.feed(30)` + `showBubble('feed')` |
+| 右键玩耍 | `menu:play` → `status.play(10)` + `showBubble('play')` |
+| 切换角色 | `menu:switchPet{type}` → `pet.setPetType(type)` |
+| 退出 | `menu:exit` → `saveState()` + `closeApp()` |
+| 饿了 | `status:hungry` → `showBubble('hungry')` |
+| 快饿死 | `status:starving` → `showBubble('hungry',{text:'快饿死了…'})` |
+| 心情差 | `status:sad` → `showBubble('sad')` + `pet.setState('sad')` |
+| 心情恢复 | `status:happy` → `pet.setState('idle')` |
+
+### 12.4 关键实现决策
+1. **点击与拖拽辨识**：mousedown 置 `mightClick=true`；移动超 4px 才转拖拽（`mightClick=false`）并开始 `moveWindow`；未超阈值 mouseup 视为点击 → 跳跃。避免点击时窗口被像素抖动带跑。
+2. **isOverPet 改用 pet.getBounds()**：命中区从 canvas 矩形升级为宠物精确边界（64×64），完成 §11.5 的 TODO。
+3. **气泡定位由 A 负责**：`showBubble()` 据宠物 `getBounds()` 在其上方居中定位；C 的 `bubble.js` 只管 DOM/台词。补 `.bubble` 最小 CSS（绝对定位、外观、箭头），C 可细化动画。
+4. **状态↔动画解耦**：`status:sad` → pet 切 `sad`（loop 动画）；autoBehavior 在非 idle 时自动暂停（B 的 `_autoTick` 已处理），心情恢复 `status:happy` → 回 idle。
+5. **最小持久化**：`menu:exit` 前 `saveState()`（pet.type + 窗口坐标 + status）；启动 `loadState()` 恢复 petType/status。窗口位置恢复需新增 `set-window-position` IPC，留待 M6/F15。
+6. **渲染循环**：`requestAnimationFrame` 驱动 `pet.update(dt)+pet.draw()`；占位绘制已移除，由 Pet 接管。
+
+### 12.5 验证情况
+- [x] `node --check` 通过：app.js / menu.js / pet.js / status.js / bubble.js
+- [x] 无头逻辑测试（node）：Status 发 `status:starving/fed` 等、Pet 的 `getBounds/getData/jump/moveTo→Promise`、`pet:stateChange/moveEnd` 全部符合 app.js 监听的事件名与方法签名
+- [x] 确认未误改 B/C 文件（仅改 app.js + style.css）
+- [ ] **运行时自测未完成**：沙箱无 Electron 二进制，需本机 `npm start` 验证：宠物 idle 呼吸、左键拖拽、点击跳跃、右键喂食弹气泡、饿/心情低时弹气泡、自动随机走动
+
+### 12.6 下一步
+- 里程碑 5（跟随鼠标 F10，依赖 `pet.moveTo`，已就绪）
+- 里程碑 6（边缘吸附 F13 + 系统托盘 F14 + 完整持久化 F15）
 
 ---
 
