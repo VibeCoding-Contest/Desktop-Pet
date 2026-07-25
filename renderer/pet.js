@@ -6,8 +6,9 @@ class Pet {
 
     this.state = 'idle';
     this.petType = 'cat';
-    this.width = 64;
-    this.height = 64;
+    this.width = 110;
+    this.height = 110;
+    this._scale = 1; // G1：用户缩放（0.6–2.5），仅影响绘制与命中盒，不改变坐标模型
     this.x = canvas.width ? (canvas.width - this.width) / 2 : 0;
     this.y = canvas.height ? (canvas.height - this.height) / 2 : 0;
 
@@ -140,9 +141,9 @@ class Pet {
     ctx.save();
     ctx.translate(cx, cy + a.bob);
     ctx.rotate(a.tilt);
-    ctx.scale(1, a.scaleY);
+    ctx.scale(this._scale, this._scale * a.scaleY);
     renderer.draw(ctx, {
-      r: 18,
+      r: 30,
       state: this.state,
       phase,
       eye: a.eye,
@@ -250,7 +251,12 @@ class Pet {
   }
 
   getBounds() {
-    return { x: this.x, y: this.y, width: this.width, height: this.height };
+    // 返回缩放后的命中盒（中心与绘制中心一致，供 app.js 命中检测/气泡定位）
+    const s = this._scale;
+    const w = this.width * s, h = this.height * s;
+    const cx = this.x + this.width / 2;
+    const cy = this.y + this.height / 2;
+    return { x: cx - w / 2, y: cy - h / 2, width: w, height: h };
   }
 
   setPosition(x, y) {
@@ -258,8 +264,16 @@ class Pet {
     this.y = y;
   }
 
+  // G1：缩放（0.6–2.5），仅影响绘制与命中盒
+  setScale(s) {
+    this._scale = Math.max(0.6, Math.min(2.5, Number(s) || 1));
+  }
+  getScale() {
+    return this._scale;
+  }
+
   getData() {
-    return { type: this.petType, x: this.x, y: this.y };
+    return { type: this.petType, x: this.x, y: this.y, scale: this._scale };
   }
 
   destroy() {
