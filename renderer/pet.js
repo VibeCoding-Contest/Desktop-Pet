@@ -23,6 +23,10 @@ class Pet {
     this._autoEnabled = false;
     this._autoTimer = null;
     this._idleSince = Date.now();
+
+    // 彩色泡泡背景（替代单调的透明框）
+    this._bubbles = [];
+    this._initBubbles();
   }
 
   setState(newState, options = {}) {
@@ -64,6 +68,7 @@ class Pet {
       }
     }
     this._updateMovement(deltaTime);
+    this._updateBubbles(deltaTime);
   }
 
   _finishOneShot() {
@@ -125,9 +130,72 @@ class Pet {
     this.y += (dy / dist) * step;
   }
 
+  // ---------- 彩色动感泡泡背景 ----------
+  _initBubbles() {
+    const W = this.canvas.width || 320, H = this.canvas.height || 320;
+    const COLORS = [
+      '255,179,186', '255,223,186', '255,255,186', '186,255,201',
+      '186,225,255', '212,186,255', '255,186,236', '186,255,255',
+    ];
+    const N = 12;
+    this._bubbles = [];
+    for (let i = 0; i < N; i++) {
+      const r = 10 + Math.random() * 20;
+      this._bubbles.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        r,
+        rgb: COLORS[Math.floor(Math.random() * COLORS.length)],
+        vy: 0.12 + Math.random() * 0.45,      // 上升速度
+        wobble: Math.random() * Math.PI * 2,  // 水平摆动相位
+        wobbleAmp: 4 + Math.random() * 12,
+        wobbleSpd: 0.0012 + Math.random() * 0.0028,
+        pulse: Math.random() * Math.PI * 2,   // 大小呼吸相位
+        pulseSpd: 0.0018 + Math.random() * 0.002,
+        alpha: 0.5 + Math.random() * 0.32,
+      });
+    }
+  }
+
+  _updateBubbles(dt) {
+    const W = this.canvas.width || 320, H = this.canvas.height || 320;
+    const d = Math.min(2.5, dt / 16.6667); // 归一化到 ~60fps，并限制大跨度
+    for (const b of this._bubbles) {
+      b.y -= b.vy * d;
+      b.wobble += b.wobbleSpd * dt;
+      b.pulse += b.pulseSpd * dt;
+      if (b.y + b.r < 0) {            // 升出顶部 → 回到底部重生
+        b.y = H + b.r;
+        b.x = Math.random() * W;
+      }
+    }
+  }
+
+  _drawBubbles(ctx) {
+    for (const b of this._bubbles) {
+      const x = b.x + Math.sin(b.wobble) * b.wobbleAmp;
+      const r = b.r * (1 + Math.sin(b.pulse) * 0.08);
+      // 主体：白心 → 彩色 → 透明边的径向渐变（泡泡质感）
+      const g = ctx.createRadialGradient(x - r * 0.3, b.y - r * 0.3, r * 0.1, x, b.y, r);
+      g.addColorStop(0, 'rgba(255,255,255,0.95)');
+      g.addColorStop(0.4, `rgba(${b.rgb},${b.alpha})`);
+      g.addColorStop(1, `rgba(${b.rgb},0.05)`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, b.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      // 高光小点
+      ctx.fillStyle = 'rgba(255,255,255,0.78)';
+      ctx.beginPath();
+      ctx.arc(x - r * 0.35, b.y - r * 0.35, r * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   draw() {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this._drawBubbles(ctx);
     const renderer = Pet.TYPES[this.petType];
     if (!renderer) return;
     if (renderer.init && Pet._ready[this.petType] !== 'ready') return;
