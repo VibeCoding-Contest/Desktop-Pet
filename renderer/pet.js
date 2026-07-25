@@ -17,6 +17,7 @@ class Pet {
     this._stateResolve = null;
     this._moveTarget = null;
     this._moveSpeed = 60;
+    this._follow = null;
 
     this._autoEnabled = false;
     this._autoTimer = null;
@@ -30,9 +31,12 @@ class Pet {
     if (this.state === newState && !force) return;
     if (newState !== this.state) {
       this._moveTarget = null;
-      const resolve = this._stateResolve;
+      const r = this._stateResolve;
       this._stateResolve = null;
-      if (resolve) resolve();
+      if (r) r();
+      const f = this._follow;
+      this._follow = null;
+      if (f) f.resolve();
     }
     this.state = newState;
     this.currentFrame = 0;
@@ -71,6 +75,32 @@ class Pet {
   }
 
   _updateMovement(deltaTime) {
+    if (this._follow) {
+      const f = this._follow;
+      const tgt = typeof f.getTarget === 'function' ? f.getTarget() : f.getTarget;
+      if (tgt) {
+        const tx = Math.max(0, Math.min(this.canvas.width - this.width, tgt.x));
+        const ty = Math.max(0, Math.min(this.canvas.height - this.height, tgt.y));
+        const dx = tx - this.x, dy = ty - this.y;
+        const dist = Math.hypot(dx, dy);
+        const step = (this._moveSpeed * 1.6) * (deltaTime / 1000);
+        if (dist > step && dist > 0) {
+          this.x += (dx / dist) * step;
+          this.y += (dy / dist) * step;
+        } else {
+          this.x = tx; this.y = ty;
+        }
+      }
+      if (Date.now() >= f.until) {
+        const resolve = f.resolve;
+        this._follow = null;
+        this._idleSince = Date.now();
+        if (this.eventBus) this.eventBus.emit('pet:moveEnd', { x: this.x, y: this.y });
+        this.setState('idle', { force: true });
+        if (resolve) resolve();
+      }
+      return;
+    }
     if (!this._moveTarget) return;
     const dt = deltaTime / 1000;
     const t = this._moveTarget;
@@ -156,6 +186,14 @@ class Pet {
     return new Promise((resolve) => {
       this.setState('jump', { force: true });
       this._stateResolve = resolve;
+    });
+  }
+
+  follow(getTarget, duration = 2000) {
+    return new Promise((resolve) => {
+      this.setState('walk', { force: true });
+      this._moveTarget = null;
+      this._follow = { getTarget, until: Date.now() + duration, resolve };
     });
   }
 
