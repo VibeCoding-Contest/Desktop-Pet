@@ -29,3 +29,7 @@ build/*
 
 # saved state (user-specific)
 !build/.gitkeep
+
+# 人员 B 本地工作记录（不入库）
+docs/FLOW.md
+docs/人员B工作目录.md
