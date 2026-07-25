@@ -113,8 +113,31 @@ class LLMClient {
   }
 
   // ---------- OpenAI 兼容 ----------
+  // 内部历史消息格式（与 mock 共用）：
+  //   assistant 带 tool_calls：{role:'assistant', content, tool_calls:[{id,name,arguments(object)}]}
+  //   tool 结果：{role:'tool', tool_call_id, name, content(string)}
+  // 发请求前用 _toWire 转成 OpenAI 线上格式（function.arguments 需为字符串、需带 type/id）
+  _toWire(messages) {
+    return messages.map((m) => {
+      if (m.role === 'assistant' && m.tool_calls) {
+        return {
+          role: 'assistant',
+          content: m.content ?? null,
+          tool_calls: m.tool_calls.map((tc) => ({
+            id: tc.id, type: 'function',
+            function: { name: tc.name, arguments: JSON.stringify(tc.arguments || {}) },
+          })),
+        };
+      }
+      if (m.role === 'tool') {
+        return { role: 'tool', tool_call_id: m.tool_call_id, content: String(m.content ?? '') };
+      }
+      return { role: m.role, content: m.content };
+    });
+  }
+
   async _openai(messages, tools) {
-    const body = { model: this.model, messages, temperature: 0.7 };
+    const body = { model: this.model, messages: this._toWire(messages), temperature: 0.7 };
     if (tools.length) {
       body.tools = tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
       body.tool_choice = 'auto';
@@ -124,13 +147,16 @@ class LLMClient {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
       body: JSON.stringify(body),
     });
-    if (!resp.ok) throw new Error('LLM HTTP ' + resp.status);
+    if (!resp.ok) {
+      const t = await resp.text().catch(() => '');
+      throw new Error('LLM HTTP ' + resp.status + ' ' + t.slice(0, 200));
+    }
     const data = await resp.json();
     const msg = data.choices[0].message;
     const tool_calls = (msg.tool_calls || []).map((tc) => {
       let args = tc.function.arguments;
-      try { args = JSON.parse(args); } catch (e) { args = {}; }
-      return { name: tc.function.name, arguments: args };
+      try { args = typeof args === 'string' ? JSON.parse(args) : (args || {}); } catch (e) { args = {}; }
+      return { id: tc.id, name: tc.function.name, arguments: args };
     });
     return { content: msg.content || '', tool_calls };
   }
