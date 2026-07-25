@@ -61,7 +61,43 @@ eventBus.on('pet:clicked', data => {
   bubble.setPosition(data.x, data.y - 40);
 });
 
-// ---------- 阶段二自测：控制台手动验证 EventBus 事件流 ----------
+// ---------- 数据持久化（人员 C：3.1）----------
+
+async function save() {
+  const bounds = await window.petAPI.getWindowBounds();
+  const data = {
+    status: status.getData(),
+    pet: bounds ? { x: bounds.x, y: bounds.y } : { x: 0, y: 0 },
+    timestamp: Date.now(),
+  };
+  window.petAPI.saveData(data);
+  console.log('[app] 数据已保存:', data);
+}
+
+async function load() {
+  try {
+    const data = await window.petAPI.loadData();
+    if (data && data.status) {
+      status.loadData(data.status);
+      console.log('[app] 数据已恢复:', data.status);
+      return data;
+    }
+    console.log('[app] 无已保存数据，使用默认值');
+  } catch (err) {
+    console.error('[app] 加载数据失败:', err);
+  }
+  return null;
+}
+
+eventBus.on('app:save', () => save());
+eventBus.on('menu:exit', () => {
+  save();
+  window.petAPI.closeApp();
+});
+
+window.addEventListener('beforeunload', () => save());
+
+// ---------- 阶段三自测：控制台手动验证持久化 + 状态栏 ----------
 window.__test = {
   listEvents() {
     const events = [];
@@ -115,10 +151,18 @@ window.__test = {
     console.log('[test] 当前状态:', status.getData());
     return status.getData();
   },
+  save() {
+    console.log('[test] 手动保存');
+    save().then(() => console.log('[test] 保存完成'));
+  },
+  load() {
+    console.log('[test] 手动加载');
+    load().then(data => console.log('[test] 加载完成:', data));
+  },
 };
 
 console.log(
-  '%c[阶段二自测] 在控制台运行以下命令验证事件流：\n' +
+  '%c[阶段三自测] 在控制台运行以下命令验证所有功能：\n' +
   '  __test.listEvents()  — 查看已注册事件\n' +
   '  __test.feed()        — 模拟喂食 → 弹跳气泡「好吃！」\n' +
   '  __test.play()        — 模拟玩耍 → 弹跳气泡「来玩吧！」\n' +
@@ -127,7 +171,9 @@ console.log(
   '  __test.lowMood()     — 模拟心情低落 → 摇摆气泡「无聊...」\n' +
   '  __test.highMood()    — 模拟心情高涨 → 弹跳气泡「嘿嘿」\n' +
   '  __test.showBubble("happy") — 直接显示气泡\n' +
-  '  __test.state()       — 查看当前状态值',
+  '  __test.state()       — 查看当前状态值\n' +
+  '  __test.save()        — 手动保存数据到磁盘\n' +
+  '  __test.load()        — 手动加载数据（可修改值后测试恢复）',
   'color: #4CAF50; font-size: 14px;'
 );
 
@@ -164,8 +210,11 @@ function init() {
   // 占位渲染
   drawPlaceholder();
 
-  // 启动状态衰减（人员 C）
-  status.start();
+  // 加载持久化数据（人员 C：3.1）
+  load().then(() => {
+    status.createStatusBar(document.body);
+    status.start();
+  });
 
   // TODO 里程碑4：B 实现 Pet 类后，实例化并启动渲染循环
   // const pet = new Pet(canvas, eventBus);

@@ -107,3 +107,64 @@ html, body {
 .bubble--wobble {
   animation: bubble-wobble 0.6s ease-in-out;
 }
+
+/* ---------- 状态栏（人员 C：3.3）---------- */
+.status-bar {
+  position: absolute;
+  bottom: 4px;
+  right: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 6px;
+  padding: 3px 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  pointer-events: none;
+  z-index: 900;
+}
+
+.status-bar__item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.status-bar__label {
+  width: 16px;
+  text-align: center;
+}
+
+.status-bar__track {
+  width: 60px;
+  height: 6px;
+  background: #e0e0e0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.status-bar__fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.status-bar__fill--hunger {
+  background: #ff9800;
+}
+
+.status-bar__fill--mood {
+  background: #e91e63;
+}
+
+.status-bar__fill--low {
+  background: #f44336;
+}
+
+.status-bar__value {
+  width: 22px;
+  text-align: right;
+  color: #666;
+  font-variant-numeric: tabular-nums;
+}
