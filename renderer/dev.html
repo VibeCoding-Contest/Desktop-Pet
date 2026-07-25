@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>桌宠 Pet 预览台（人员 B 开发用）</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #232332; color: #e6e6e6;
+         font: 14px/1.5 system-ui, sans-serif; display: flex; gap: 14px; padding: 14px; }
+  #stage { position: relative; width: 300px; height: 300px; flex: 0 0 300px;
+           background: linear-gradient(#5a6a8a, #2b3450); border-radius: 10px; overflow: hidden;
+           box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+  #pet-canvas { position: absolute; inset: 0; cursor: grab; }
+  #pet-canvas:active { cursor: grabbing; }
+  #panel { display: flex; flex-direction: column; gap: 10px; min-width: 240px; }
+  .group { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .group > label { font-size: 12px; opacity: .6; width: 64px; }
+  button { padding: 4px 10px; border: 1px solid #555; border-radius: 6px;
+           background: #333; color: #e6e6e6; cursor: pointer; }
+  button:hover { background: #444; }
+  button.active { background: #4a7bd0; border-color: #6a9bf0; }
+  .hint { opacity: .55; font-size: 12px; }
+  #log { width: 100%; height: 180px; overflow: auto; resize: vertical;
+         background: #1a1a26; border: 1px solid #3a3a4a; border-radius: 6px;
+         padding: 6px; font: 12px/1.4 monospace; white-space: pre; }
+  h1 { font-size: 15px; margin: 0 0 4px; }
+</style>
+</head>
+<body>
+  <div id="stage"><canvas id="pet-canvas" width="300" height="300"></canvas></div>
+  <div id="panel">
+    <h1>Pet 预览台</h1>
+    <div class="hint">单击=跳跃 · 按住拖拽=移动 · 空闲 5s=自动行为</div>
+    <div class="group"><label>状态</label><span id="states"></span></div>
+    <div class="group"><label>角色</label><span id="types"></span></div>
+    <div class="group"><label>动作</label><span id="actions"></span></div>
+    <div class="group"><label>模拟</label><span id="sim"></span></div>
+    <div id="log"></div>
+  </div>
+  <script src="pet.js"></script>
+  <script src="eventbus.js"></script>
+  <script src="pets/cat.js"></script>
+  <script src="pets/dog.js"></script>
+  <script src="pets/penguin.js"></script>
+  <script src="dev.js"></script>
+</body>
+</html>
