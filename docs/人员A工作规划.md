@@ -104,15 +104,15 @@
 - [ ] **自测**：`npm start` 能弹出透明窗口，`window.petAPI` 在 DevTools 可见 —— 代码已写、语法校验通过；沙箱无网络无法下载 Electron 二进制，需在本机 `npm start` 验证（见 §十）
 
 ### 里程碑 2：拖拽移动（0:45–1:15，与 B 并行）
-- [ ] `app.js`：canvas `mousedown`→记录起点+关穿透；`mousemove`→`emit('pet:dragging')`+`moveWindow`；`mouseup`→`emit('pet:dragEnd')`+恢复穿透
-- [ ] 拖拽逻辑兼容 B 的 pet.js 未就绪情况（pet.js 未实现时拖拽仅移动窗口即可）
-- [ ] **自测**：角色可拖到屏幕任意位置，松开停留；离开角色区域点击穿透到下层窗口
+- [x] `app.js`：canvas `mousedown`→记录起点+关穿透；`mousemove`→`emit('pet:dragging')`+`moveWindow`；`mouseup`→`emit('pet:dragEnd')`+恢复穿透
+- [x] 拖拽逻辑兼容 B 的 pet.js 未就绪情况（pet.js 未实现时拖拽仅移动窗口即可）
+- [ ] **自测**：角色可拖到屏幕任意位置，松开停留；离开角色区域点击穿透到下层窗口 —— 代码已写、语法校验通过；需本机 `npm start` 验证（见 §十一）
 
 ### 里程碑 3：右键菜单（0:45–1:15）
-- [ ] `menu.js`：`Menu` 类 `show(x,y)`/`hide()`/`destroy()`
-- [ ] 菜单项：喂食 / 玩耍 / 切换角色 / 退出（对应 `menu:feed`/`menu:play`/`menu:switchPet`/`menu:exit`）
-- [ ] `app.js`：canvas `contextmenu` → `menu.show()`；监听 `menu:exit` → `closeApp()`
-- [ ] **自测**：右键弹菜单，点退出能关应用；点喂食/玩耍发出事件（B/C 接收后回显）
+- [x] `menu.js`：`Menu` 类 `show(x,y)`/`hide()`/`destroy()`
+- [x] 菜单项：喂食 / 玩耍 / 切换角色 / 退出（对应 `menu:feed`/`menu:play`/`menu:switchPet`/`menu:exit`）
+- [x] `app.js`：canvas `contextmenu` → `menu.show()`；监听 `menu:exit` → `closeApp()`
+- [ ] **自测**：右键弹菜单，点退出能关应用；点喂食/玩耍发出事件（B/C 接收后回显） —— 代码已写、语法校验通过；需本机验证（见 §十一）
 
 ### 里程碑 4：联调（1:15–1:30，全员）
 - [ ] app.js 串联：实例化 pet/status/bubble/menu，注入 eventBus
@@ -264,6 +264,53 @@ contextBridge.exposeInMainWorld('petAPI', {
 ### 10.5 下一步
 - 里程碑 2（拖拽移动）+ 里程碑 3（右键菜单）—— 与 B 并行，依赖里程碑 1 地基（已完成）
 - 完成后建议统一 commit + push `feat/window` 并建 PR
+
+---
+
+## 十一、里程碑 2 & 3 实现记录（更新于 2026-07-25）
+
+> 进度背景：里程碑 1 已合并（PR #5，commit ae8c3f5）；B/C 的 `status.js`/`bubble.js` 已合并（PR #3/#4）。本轮实现 A 的里程碑 2（拖拽）+ 里程碑 3（右键菜单）。
+
+### 11.1 本次改动文件
+| 文件 | 改动 | 说明 |
+|------|------|------|
+| `renderer/menu.js` | 新建（填充） | `Menu` 类：`show(x,y,options)`/`hide()`/`destroy()`/`get visible()`；菜单项配置 + switch-pet 循环切换；边缘翻转定位；点外部收起 |
+| `renderer/app.js` | 修改 | 拖拽事件链（mousedown/mousemove/mouseup）、点击穿透 hover 切换、右键菜单接入、菜单事件路由（`menu:exit/feed/play/switchPet`）、全局阻止默认右键 |
+| `main.js` | 修改 | 点击穿透默认值改为平台感知：Win/macOS 默认开启 forward，Linux 默认关闭（窗口始终可交互） |
+| `preload.js` | 修改 | `window.petAPI` 新增只读 `platform: process.platform`，供渲染层判断是否启用穿透 |
+| `renderer/style.css` | 修改 | 追加 `.context-menu`/`.menu-item`/`.menu-item:hover`/`.menu-divider` 样式（接口文档 §7） |
+
+### 11.2 关键实现决策
+1. **点击穿透平台感知（重要）**：`setIgnoreMouseEvents(true,{forward:true})` 的 forward 在 Linux X11 上不可靠，会导致宠物无法点击。故 `main.js` 仅 Win/macOS 默认开启穿透；`preload.js` 暴露 `platform`，`app.js` 据 `platform!=='linux'` 设 `ENABLE_CLICK_THROUGH`：Linux 下窗口始终可交互（牺牲透明边框的透传以换取可用），Win/macOS 走 hover 切换。
+2. **拖拽用增量 screen 坐标**：`dx=e.screenX-startX`，经 IPC `move-window` 让主进程 `setPosition(x+dx,y+dy)`，与规划文档 §8.5 一致；拖拽期间 `setClickThrough(false)` 保持可交互。
+3. **hover 切换穿透**：非拖拽 `mousemove` 据 `isOverPet`（暂用 canvas 矩形，TODO 改用 B 的 `pet.getBounds()`）切换穿透；用 `clickThrough` 缓存避免冗余 IPC。
+4. **菜单可见时不切穿透**：`menu.visible` 时 hover 分支强制 `setClickThrough(false)`，避免鼠标移向菜单（可能落在 canvas 矩形外）触发穿透导致菜单消失。
+5. **菜单自绘 DOM 而非原生 Menu**：原生 `Menu` 在透明窗口定位困难，改用绝对定位 `div.context-menu`，支持边缘翻转、点外部收起、`pointer-events:auto`。
+6. **switch-pet 循环切换**：每次点击「切换角色」在 `cat→dog→penguin` 间循环并 `emit('menu:switchPet',{type})`，B 的 `pet.setPetType` 接收（B 未就绪时仅日志）。
+7. **菜单事件解耦**：`menu:exit`→`closeApp()`；`menu:feed/play/switchPet` 暂由 app.js 日志占位，待 C/B 接入后自动生效（B/C 已合并 status/bubble，里程碑 4 串联）。
+
+### 11.3 事件流转（已实现）
+- 拖拽：`canvas mousedown` → `setClickThrough(false)` → `window mousemove`→`emit('pet:dragging',{dx,dy})`+`moveWindow(dx,dy)` → `mouseup`→`emit('pet:dragEnd',{x,y})`+恢复穿透
+- 右键：`canvas contextmenu` → `menu.show(clientX,clientY)` → 点菜单项 `emit('menu:feed|play|switchPet|exit')` → `menu.hide()`
+
+### 11.4 验证情况
+- [x] `node --check` 通过：`main.js`/`preload.js`/`renderer/app.js`/`renderer/menu.js`
+- [x] 与 HEAD 对比确认未误改 B/C 的 `index.html`/`style.css` 既有内容（HEAD 的 style.css 仍是里程碑1骨架，B/C 样式在各模块内部）
+- [ ] **运行时自测未完成**：沙箱无网络，Electron 二进制缺失，需本机 `npm start` 验证：
+  - 左键拖拽宠物到屏幕任意位置、松开停留
+  - 右键弹出菜单；点「退出」关闭应用；点「喂食/玩耍」Console 打印事件
+  - Win/macOS：鼠标离开宠物区域可点击下层窗口
+
+### 11.5 已知限制 / TODO
+| 项 | 说明 |
+|----|------|
+| Linux 点击穿透 | forward 不可靠，默认关闭；透明边框区域会捕获点击（不透传）。Win/macOS 正常透传 |
+| hover 命中区 | 暂用 canvas 矩形；待 B 实现 `pet.getBounds()` 后改用精确边界 |
+| DPI / 多屏 | `moveWindow` 用 screen 像素，高 DPI 缩放下可能漂移，待联调时校准 |
+| 菜单关闭 | Linux 下点窗口外不触发 document click（透传到桌面），菜单仅靠菜单项点击/再次右键关闭；待优化 |
+
+### 11.6 下一步
+- 里程碑 4（联调）：app.js 实例化 `Pet`/`Status`/`Bubble` 并注入 eventBus，打通「拖拽→移动」「右键喂食→状态+气泡」全链路（B/C 模块已就绪，仅缺 `pet.js`）
 
 ---
 

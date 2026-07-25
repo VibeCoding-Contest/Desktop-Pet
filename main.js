@@ -25,9 +25,11 @@ function createWindow() {
     },
   });
 
-  // 默认开启点击穿透（forward 保留鼠标移动事件转发，便于渲染层做 hover 检测）
-  // 渲染层在需要交互时通过 set-click-through 关闭穿透
-  win.setIgnoreMouseEvents(true, { forward: true });
+  // 点击穿透：Win/macOS 默认开启（forward 转发鼠标移动用于 hover 检测）；
+  // Linux 下 forward 不可靠，默认关闭（窗口始终可交互），避免宠物无法点击
+  if (process.platform !== 'linux') {
+    win.setIgnoreMouseEvents(true, { forward: true });
+  }
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   win.on('closed', () => { win = null; });
