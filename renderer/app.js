@@ -62,6 +62,19 @@ let lastFollowMove = 0;
 const FOLLOW_DURATION = 2000; // 跟随持续 2 秒
 const FOLLOW_THROTTLE = 80;   // mousemove 节流 ms
 
+// ---------- 桌面漫游（桌面边框反弹）----------
+let roamEnabled = false;
+let roamVx = 0;
+let roamVy = 0;
+const ROAM_SPEED = 80;
+let roamWinX = 0;
+let roamWinY = 0;
+let roamWinW = 220;
+let roamWinH = 220;
+let roamScrW = 1920;
+let roamScrH = 1080;
+let roamStarted = false;
+
 // 判断鼠标是否在宠物可交互区域（使用 B 的 pet.getBounds 精确边界）
 function isOverPet(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
@@ -87,8 +100,92 @@ function updateStatusBarPosition() {
   status.setBarPosition(x, y);
 }
 
+async function initRoam() {
+  const bounds = await window.petAPI.getWindowBounds();
+  const scr = await window.petAPI.getScreenSize();
+  if (bounds) {
+    roamWinX = bounds.x;
+    roamWinY = bounds.y;
+    roamWinW = bounds.width;
+    roamWinH = bounds.height;
+  }
+  if (scr) {
+    roamScrW = scr.width;
+    roamScrH = scr.height;
+  }
+  roamEnabled = true;
+  roamStarted = true;
+  pet.setState('walk', { force: true });
+}
+
+function stopRoam() {
+  roamEnabled = false;
+  roamVx = 0;
+  roamVy = 0;
+}
+
+async function resumeRoam() {
+  const bounds = await window.petAPI.getWindowBounds();
+  if (bounds) {
+    roamWinX = bounds.x;
+    roamWinY = bounds.y;
+  }
+  roamEnabled = true;
+  roamVx = 0;
+  roamVy = 0;
+}
+
+function updateRoam(dt) {
+  if (!roamEnabled || !roamStarted) return;
+  if (pet.state !== 'walk' && pet.state !== 'idle') return;
+
+  if (roamVx === 0 && roamVy === 0) {
+    const angle = Math.random() * Math.PI * 2;
+    roamVx = Math.cos(angle) * ROAM_SPEED;
+    roamVy = Math.sin(angle) * ROAM_SPEED;
+    pet.setState('walk', { force: true });
+  }
+
+  const sec = Math.min(dt / 1000, 0.05);
+  roamWinX += roamVx * sec;
+  roamWinY += roamVy * sec;
+
+  let bounced = false;
+  if (roamWinX <= 0) {
+    roamWinX = 0;
+    roamVx = Math.abs(roamVx);
+    bounced = true;
+  } else if (roamWinX + roamWinW >= roamScrW) {
+    roamWinX = roamScrW - roamWinW;
+    roamVx = -Math.abs(roamVx);
+    bounced = true;
+  }
+  if (roamWinY <= 0) {
+    roamWinY = 0;
+    roamVy = Math.abs(roamVy);
+    bounced = true;
+  } else if (roamWinY + roamWinH >= roamScrH) {
+    roamWinY = roamScrH - roamWinH;
+    roamVy = -Math.abs(roamVy);
+    bounced = true;
+  }
+
+  if (bounced) {
+    const speed = Math.hypot(roamVx, roamVy);
+    const baseAngle = Math.atan2(roamVy, roamVx);
+    const variation = (Math.random() - 0.5) * Math.PI * 0.6;
+    const newAngle = baseAngle + variation;
+    roamVx = Math.cos(newAngle) * speed;
+    roamVy = Math.sin(newAngle) * speed;
+  }
+
+  window.petAPI.setWindowPosition(Math.round(roamWinX), Math.round(roamWinY));
+  updateStatusBarPosition();
+}
+
 canvas.addEventListener('mousedown', async (e) => {
   if (e.button !== 0) return;
+  stopRoam();
   isDragging = true;
   mightClick = true;
   dragStartScreenX = e.screenX;
@@ -171,6 +268,7 @@ window.addEventListener('mouseup', async (e) => {
     saveState(); // F15：拖拽结束持久化位置
   }
   setClickThrough(!isOverPet(e.clientX, e.clientY));
+  resumeRoam();
 });
 
 // ---------- 右键菜单（里程碑3）----------
@@ -265,6 +363,7 @@ function loop(now) {
   lastTime = now;
   pet.update(dt);
   pet.draw();
+  updateRoam(dt);
   requestAnimationFrame(loop);
 }
 
@@ -360,7 +459,7 @@ async function init() {
   status.createStatusBar(document.body);
   updateStatusBarPosition();
   status.start();
-  pet.startAutoBehavior();
+  initRoam();
   lastTime = performance.now();
   requestAnimationFrame(loop);
   // F15：定时自动保存（防止托盘退出/异常关闭丢数据）
