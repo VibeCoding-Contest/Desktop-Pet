@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>Desktop Pet</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 宠物画布：人 B 的 Pet 类在此绘制 -->
+  <canvas id="pet-canvas" width="200" height="200"></canvas>
+
+  <!-- 对话气泡容器：人 C 的 Bubble 类挂载于此 -->
+  <div id="bubble-container"></div>
+
+  <!-- 右键菜单容器：人 A 的 Menu 类挂载于此 -->
+  <div id="menu-container"></div>
+
+  <!-- 模块加载顺序：先定义类，app.js 最后实例化与串联 -->
+  <script src="pet.js"></script>
+  <script src="status.js"></script>
+  <script src="bubble.js"></script>
+  <script src="menu.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
