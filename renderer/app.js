@@ -78,6 +78,9 @@ let roamScrW = 1920;
 let roamScrH = 1080;
 let roamStarted = false;
 let menuPollTimer = null;
+let roamPhase = 'walk';            // 'walk' 走动 | 'rest' 原地休息（让自动行为发挥）
+let roamPhaseTimer = 0;
+let roamNextSwitch = 5 + Math.random() * 4;
 
 // 判断鼠标是否在宠物可交互区域（使用 B 的 pet.getBounds 精确边界）
 function isOverPet(clientX, clientY) {
@@ -119,6 +122,8 @@ async function initRoam() {
   }
   roamEnabled = true;
   roamStarted = true;
+  roamPhase = 'walk';
+  roamPhaseTimer = 0;
   pet.setState('walk', { force: true });
 }
 
@@ -126,6 +131,8 @@ function stopRoam() {
   roamEnabled = false;
   roamVx = 0;
   roamVy = 0;
+  roamPhase = 'walk';
+  roamPhaseTimer = 0;
 }
 
 async function resumeRoam() {
@@ -137,11 +144,39 @@ async function resumeRoam() {
   roamEnabled = true;
   roamVx = 0;
   roamVy = 0;
+  roamPhase = 'walk';
+  roamPhaseTimer = 0;
+  roamNextSwitch = 5 + Math.random() * 4;
 }
 
 function updateRoam(dt) {
   if (!roamEnabled || !roamStarted) return;
   if (pet.state !== 'walk' && pet.state !== 'idle') return;
+
+  roamPhaseTimer += dt;
+
+  // 休息阶段：原地不动，把空闲交给自动行为（睡觉/汪叫/嗅闻/开心…）
+  if (roamPhase === 'rest') {
+    if (roamPhaseTimer >= roamNextSwitch) {
+      roamPhase = 'walk';
+      roamPhaseTimer = 0;
+      roamNextSwitch = 5 + Math.random() * 5;
+      roamVx = 0;
+      roamVy = 0;
+    }
+    return;
+  }
+
+  // 走动阶段：到点切换为休息
+  if (roamPhaseTimer >= roamNextSwitch) {
+    roamPhase = 'rest';
+    roamPhaseTimer = 0;
+    roamNextSwitch = 6 + Math.random() * 4;
+    roamVx = 0;
+    roamVy = 0;
+    pet.setState('idle', { force: true });
+    return;
+  }
 
   if (roamVx === 0 && roamVy === 0) {
     const angle = Math.random() * Math.PI * 2;
@@ -384,12 +419,14 @@ let savedWinH = 360;
 
 eventBus.on('chat:open', async () => {
   stopRoam();
+  setClickThrough(false);
   const bounds = await window.petAPI.getWindowBounds();
   if (bounds) {
     savedWinW = bounds.width;
     savedWinH = bounds.height;
   }
   await fitWindowToScreen(600, 500);
+  requestAnimationFrame(() => chat.focusInput());
 });
 
 eventBus.on('chat:close', async () => {
@@ -467,9 +504,9 @@ if (typeof window.Scheduler === 'function' && window.scheduleStore) {
 eventBus.on('status:hungry', () => showBubble('hungry'));
 eventBus.on('status:starving', () => showBubble('hungry', { text: '快饿死了…' }));
 eventBus.on('status:sad', () => { showBubble('sad'); pet.setState('sad', { force: true }); });
-eventBus.on('status:happy', () => { pet.setState('idle', { force: true }); showBubble('happy'); });
-eventBus.on('status:fed', () => showBubble('feed'));
-eventBus.on('status:played', () => showBubble('happy'));
+eventBus.on('status:happy', () => { pet.setState('happy', { force: true }); showBubble('happy'); });
+eventBus.on('status:fed', () => { pet.setState('happy', { force: true }); showBubble('feed'); });
+eventBus.on('status:played', () => { pet.setState('happy', { force: true }); showBubble('happy'); });
 
 // ---------- 加载自定义形象（升级功能）----------
 // 启动时：先加载并注册所有自定义形象，再 loadState（保证存档里的自定义 id 可恢复）
@@ -680,6 +717,7 @@ async function init() {
   status.createStatusBar(document.body);
   updateStatusBarPosition();
   status.start();
+  pet.startAutoBehavior();
   initRoam();
   lastTime = performance.now();
   requestAnimationFrame(loop);

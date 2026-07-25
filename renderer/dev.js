@@ -46,7 +46,7 @@
 
   var statesEl = document.getElementById('states');
   var stateBtns = {};
-  ['idle', 'walk', 'jump', 'sit', 'yawn', 'sad'].forEach(function (s) {
+  ['idle', 'walk', 'jump', 'sit', 'yawn', 'sad', 'sleep', 'bark', 'sniff', 'happy', 'roll', 'look'].forEach(function (s) {
     stateBtns[s] = mk(statesEl, s, function () { pet.setState(s, { force: true }); });
   });
   bus.on('pet:stateChange', function (d) {
