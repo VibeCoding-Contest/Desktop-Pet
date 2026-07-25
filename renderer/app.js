@@ -239,7 +239,7 @@ window.addEventListener('mousemove', (e) => {
     }
     return;
   }
-  if (menu.visible) { setClickThrough(false); return; }
+  if (menu.visible || chat.isOpen) { setClickThrough(false); return; }
   setClickThrough(!isOverPet(e.clientX, e.clientY));
 });
 
