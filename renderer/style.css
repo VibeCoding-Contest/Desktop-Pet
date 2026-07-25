@@ -26,3 +26,43 @@ html, body {
   width: 100%;
   pointer-events: none;
 }
+
+/* ---------- 对话气泡（人员 C：bubble.js）---------- */
+.bubble {
+  position: absolute;
+  display: none;
+  background: #fff;
+  border: 2px solid #ccc;
+  border-radius: 12px;
+  padding: 6px 12px;
+  max-width: 200px;
+  font-size: 13px;
+  color: #333;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.bubble--visible {
+  opacity: 1;
+}
+
+.bubble-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bubble-arrow {
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 8px solid #fff;
+}
