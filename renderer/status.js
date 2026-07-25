@@ -68,14 +68,14 @@ class Status {
     this._barEl.className = 'status-bar';
     this._barEl.innerHTML = `
       <div class="status-bar__item">
-        <span class="status-bar__label">🍖</span>
+        <span class="status-bar__label">饱</span>
         <div class="status-bar__track">
           <div class="status-bar__fill status-bar__fill--hunger" style="width:${this.hunger}%"></div>
         </div>
         <span class="status-bar__value">${Math.round(this.hunger)}</span>
       </div>
       <div class="status-bar__item">
-        <span class="status-bar__label">💖</span>
+        <span class="status-bar__label">乐</span>
         <div class="status-bar__track">
           <div class="status-bar__fill status-bar__fill--mood" style="width:${this.mood}%"></div>
         </div>

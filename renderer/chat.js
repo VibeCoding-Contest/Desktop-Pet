@@ -23,7 +23,11 @@ class Chat {
     if (this.sendBtn) this.sendBtn.addEventListener('click', (e) => { e.preventDefault(); this._send(); });
     if (this.input) {
       this.input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this._send(); }
+        // 中文输入法组词时 Enter 用来选词，不能当发送（isComposing / keyCode 229）
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+          e.preventDefault();
+          this._send();
+        }
       });
       // 自适应高度
       this.input.addEventListener('input', () => this._autosize());
