@@ -43,12 +43,17 @@ let clickThrough = ENABLE_CLICK_THROUGH;
 
 // ---------- 拖拽 + 点击辨识（里程碑2/4）----------
 let isDragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
+let dragStartScreenX = 0;
+let dragStartScreenY = 0;
+let dragStartWinX = 0;
+let dragStartWinY = 0;
 let downClientX = 0;
 let downClientY = 0;
 let mightClick = false;
 const CLICK_THRESHOLD = 4;
+let dragRAF = null;         // requestAnimationFrame id
+let dragTargetX = 0;        // 最新目标窗口位置
+let dragTargetY = 0;
 
 // ---------- 跟随鼠标 F10（里程碑5）----------
 let followMode = false;
@@ -74,14 +79,20 @@ function setClickThrough(enable) {
   window.petAPI.setClickThrough(enable);
 }
 
-canvas.addEventListener('mousedown', (e) => {
+canvas.addEventListener('mousedown', async (e) => {
   if (e.button !== 0) return;
   isDragging = true;
   mightClick = true;
-  dragStartX = e.screenX;
-  dragStartY = e.screenY;
+  dragStartScreenX = e.screenX;
+  dragStartScreenY = e.screenY;
   downClientX = e.clientX;
   downClientY = e.clientY;
+
+  const bounds = await window.petAPI.getWindowBounds();
+  if (bounds) {
+    dragStartWinX = bounds.x;
+    dragStartWinY = bounds.y;
+  }
   setClickThrough(false);
   e.preventDefault();
 });
@@ -92,12 +103,15 @@ window.addEventListener('mousemove', (e) => {
       mightClick = false;
     }
     if (!mightClick) {
-      const dx = e.screenX - dragStartX;
-      const dy = e.screenY - dragStartY;
-      eventBus.emit('pet:dragging', { dx, dy });
-      window.petAPI.moveWindow(dx, dy);
-      dragStartX = e.screenX;
-      dragStartY = e.screenY;
+      dragTargetX = dragStartWinX + (e.screenX - dragStartScreenX);
+      dragTargetY = dragStartWinY + (e.screenY - dragStartScreenY);
+      eventBus.emit('pet:dragging', { dx: e.screenX - dragStartScreenX, dy: e.screenY - dragStartScreenY });
+      if (!dragRAF) {
+        dragRAF = requestAnimationFrame(() => {
+          dragRAF = null;
+          window.petAPI.setWindowPosition(dragTargetX, dragTargetY);
+        });
+      }
     }
     return;
   }
@@ -119,6 +133,8 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mouseup', async (e) => {
   if (!isDragging) return;
   isDragging = false;
+  cancelAnimationFrame(dragRAF);
+  dragRAF = null;
   if (mightClick) {
     eventBus.emit('pet:clicked', { x: e.clientX, y: e.clientY });
     pet.jump();
