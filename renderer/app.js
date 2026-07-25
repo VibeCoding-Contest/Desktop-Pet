@@ -1,12 +1,10 @@
 // app.js — 渲染进程入口（人 A）
-// 职责：EventBus 单例、模块实例化、全局事件绑定、渲染循环
-// 对应里程碑：M1（EventBus + 自测）、M4（串联各模块）
+// 职责：EventBus 单例、模块实例化与串联、全局事件、拖拽、右键菜单、渲染循环、持久化
+// 对应里程碑：M1(EventBus) / M2(拖拽) / M3(右键菜单) / M4(联调)
 
 // ---------- EventBus 事件总线（接口文档 §3.1）----------
 class EventBus {
-  constructor() {
-    this._map = new Map();
-  }
+  constructor() { this._map = new Map(); }
   on(event, cb) {
     if (!this._map.has(event)) this._map.set(event, new Set());
     this._map.get(event).add(cb);
@@ -31,73 +29,166 @@ const eventBus = new EventBus();
 window.eventBus = eventBus;
 
 const canvas = document.getElementById('pet-canvas');
-const ctx = canvas.getContext('2d');
 
-// ---------- 实例化 C 模块 ----------
+// ---------- 模块实例化 ----------
+const pet    = new Pet(canvas, eventBus);
 const status = new Status(eventBus);
 const bubble = new Bubble(document.getElementById('bubble-container'));
+const menu   = new Menu(document.getElementById('menu-container'));
 
-// ---------- 事件串联（人员 C 负责）----------
+// ---------- 平台 / 点击穿透（里程碑2）----------
+// Linux 下 setIgnoreMouseEvents(forward) 不可靠，默认不启用穿透
+const ENABLE_CLICK_THROUGH = !!(window.petAPI && window.petAPI.platform !== 'linux');
+let clickThrough = ENABLE_CLICK_THROUGH;
 
-// 状态 → 气泡
-eventBus.on('status:hungry', () => bubble.show('hungry'));
-eventBus.on('status:starving', () => bubble.show('hungry', { text: '我要饿死了！！！' }));
-eventBus.on('status:sad', () => bubble.show('sad'));
-eventBus.on('status:happy', () => bubble.show('happy'));
-eventBus.on('status:fed', () => bubble.show('feed'));
-eventBus.on('status:played', () => bubble.show('happy'));
+// ---------- 拖拽 + 点击辨识（里程碑2/4）----------
+let isDragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let downClientX = 0;
+let downClientY = 0;
+let mightClick = false;
+const CLICK_THRESHOLD = 4;
 
-// 气泡位置跟随宠物（B 实现后生效）
-eventBus.on('pet:dragEnd', ({ x, y }) => bubble.setPosition(x, y - 40));
-eventBus.on('pet:clicked', ({ x, y }) => bubble.setPosition(x, y - 40));
+function isOverPet(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const b = pet.getBounds();
+  const px = rect.left + b.x;
+  const py = rect.top + b.y;
+  return clientX >= px && clientX <= px + b.width &&
+         clientY >= py && clientY <= py + b.height;
+}
 
-// 菜单 → 状态（A 菜单实现后生效）
-eventBus.on('menu:feed', () => status.feed(30));
-eventBus.on('menu:play', () => status.play(10));
+function setClickThrough(enable) {
+  if (!ENABLE_CLICK_THROUGH) return;
+  if (clickThrough === enable) return;
+  clickThrough = enable;
+  window.petAPI.setClickThrough(enable);
+}
 
-// 点击 → 状态（B 宠物点击实现后生效）
-eventBus.on('pet:clicked', data => {
-  status.play(10);
-  bubble.setPosition(data.x, data.y - 40);
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  isDragging = true;
+  mightClick = true;
+  dragStartX = e.screenX;
+  dragStartY = e.screenY;
+  downClientX = e.clientX;
+  downClientY = e.clientY;
+  setClickThrough(false);
+  e.preventDefault();
 });
 
-// ---------- 数据持久化（人员 C：3.1）----------
-
-async function save() {
-  const bounds = await window.petAPI.getWindowBounds();
-  const data = {
-    status: status.getData(),
-    pet: bounds ? { x: bounds.x, y: bounds.y } : { x: 0, y: 0 },
-    timestamp: Date.now(),
-  };
-  window.petAPI.saveData(data);
-  console.log('[app] 数据已保存:', data);
-}
-
-async function load() {
-  try {
-    const data = await window.petAPI.loadData();
-    if (data && data.status) {
-      status.loadData(data.status);
-      console.log('[app] 数据已恢复:', data.status);
-      return data;
+window.addEventListener('mousemove', (e) => {
+  if (isDragging) {
+    if (mightClick && Math.hypot(e.clientX - downClientX, e.clientY - downClientY) > CLICK_THRESHOLD) {
+      mightClick = false;
     }
-    console.log('[app] 无已保存数据，使用默认值');
-  } catch (err) {
-    console.error('[app] 加载数据失败:', err);
+    if (!mightClick) {
+      const dx = e.screenX - dragStartX;
+      const dy = e.screenY - dragStartY;
+      eventBus.emit('pet:dragging', { dx, dy });
+      window.petAPI.moveWindow(dx, dy);
+      dragStartX = e.screenX;
+      dragStartY = e.screenY;
+    }
+    return;
   }
-  return null;
+  if (menu.visible) { setClickThrough(false); return; }
+  setClickThrough(!isOverPet(e.clientX, e.clientY));
+});
+
+window.addEventListener('mouseup', async (e) => {
+  if (!isDragging) return;
+  isDragging = false;
+  if (mightClick) {
+    eventBus.emit('pet:clicked', { x: e.clientX, y: e.clientY });
+    pet.jump();
+    status.play(10);
+    showBubble('happy');
+  } else {
+    const bounds = await window.petAPI.getWindowBounds();
+    if (bounds) eventBus.emit('pet:dragEnd', { x: bounds.x, y: bounds.y });
+  }
+  setClickThrough(!isOverPet(e.clientX, e.clientY));
+});
+
+// ---------- 右键菜单（里程碑3）----------
+window.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  setClickThrough(false);
+  menu.show(e.clientX, e.clientY);
+});
+
+// ---------- 气泡定位辅助 ----------
+function showBubble(type, options) {
+  const rect = canvas.getBoundingClientRect();
+  const b = pet.getBounds();
+  const cx = rect.left + b.x + b.width / 2;
+  const top = rect.top + b.y - 40;
+  bubble.setPosition(cx - 40, top);
+  bubble.show(type, options);
 }
 
-eventBus.on('app:save', () => save());
-eventBus.on('menu:exit', () => {
-  save();
+// ---------- 菜单事件路由（接口文档 §5.3）----------
+eventBus.on('menu:exit', async () => {
+  await saveState();
   window.petAPI.closeApp();
 });
+eventBus.on('menu:feed', () => { status.feed(30); showBubble('feed'); });
+eventBus.on('menu:play', () => { status.play(10); showBubble('play'); });
+eventBus.on('menu:switchPet', (data) => { if (data && data.type) pet.setPetType(data.type); });
 
-window.addEventListener('beforeunload', () => save());
+// ---------- 状态事件 → 气泡 / 动画（接口文档 §5.4）----------
+eventBus.on('status:hungry', () => showBubble('hungry'));
+eventBus.on('status:starving', () => showBubble('hungry', { text: '快饿死了…' }));
+eventBus.on('status:sad', () => { showBubble('sad'); pet.setState('sad', { force: true }); });
+eventBus.on('status:happy', () => { pet.setState('idle', { force: true }); showBubble('happy'); });
+eventBus.on('status:fed', () => showBubble('feed'));
+eventBus.on('status:played', () => showBubble('happy'));
 
-// ---------- 阶段三自测：控制台手动验证持久化 + 状态栏 ----------
+// ---------- 数据持久化 ----------
+async function saveState() {
+  try {
+    const bounds = await window.petAPI.getWindowBounds();
+    const data = {
+      pet: { type: pet.petType, x: bounds ? bounds.x : 0, y: bounds ? bounds.y : 0 },
+      status: status.getData(),
+      timestamp: Date.now(),
+    };
+    window.petAPI.saveData(data);
+    console.log('[app] 数据已保存:', data);
+  } catch (e) {
+    console.error('[app] saveState error:', e);
+  }
+}
+
+async function loadState() {
+  try {
+    const data = await window.petAPI.loadData();
+    if (!data) return;
+    if (data.pet && data.pet.type) pet.setPetType(data.pet.type);
+    if (data.status) status.loadData(data.status);
+    console.log('[app] 数据已恢复:', data.status);
+  } catch (e) {
+    console.error('[app] loadState error:', e);
+  }
+}
+
+eventBus.on('app:save', () => saveState());
+window.addEventListener('beforeunload', () => saveState());
+
+// ---------- 渲染循环 ----------
+let lastTime = 0;
+function loop(now) {
+  const dt = now - lastTime;
+  lastTime = now;
+  pet.update(dt);
+  pet.draw();
+  requestAnimationFrame(loop);
+}
+
+// ---------- 自测工具 ----------
 window.__test = {
   listEvents() {
     const events = [];
@@ -145,7 +236,7 @@ window.__test = {
   },
   showBubble(type, text) {
     console.log('[test] 直接显示气泡:', type, text);
-    bubble.show(type, text ? { text } : undefined);
+    showBubble(type, text ? { text } : undefined);
   },
   state() {
     console.log('[test] 当前状态:', status.getData());
@@ -153,74 +244,44 @@ window.__test = {
   },
   save() {
     console.log('[test] 手动保存');
-    save().then(() => console.log('[test] 保存完成'));
+    saveState().then(() => console.log('[test] 保存完成'));
   },
   load() {
     console.log('[test] 手动加载');
-    load().then(data => console.log('[test] 加载完成:', data));
+    loadState().then(() => console.log('[test] 加载完成'));
   },
 };
 
 console.log(
-  '%c[阶段三自测] 在控制台运行以下命令验证所有功能：\n' +
+  '%c[自测] 在控制台运行以下命令验证所有功能：\n' +
   '  __test.listEvents()  — 查看已注册事件\n' +
-  '  __test.feed()        — 模拟喂食 → 弹跳气泡「好吃！」\n' +
-  '  __test.play()        — 模拟玩耍 → 弹跳气泡「来玩吧！」\n' +
-  '  __test.lowHunger()   — 模拟饥饿 → 抖动气泡「好饿...」\n' +
-  '  __test.starve()      — 模拟极度饥饿 → 抖动气泡「我要饿死了！！！」\n' +
-  '  __test.lowMood()     — 模拟心情低落 → 摇摆气泡「无聊...」\n' +
-  '  __test.highMood()    — 模拟心情高涨 → 弹跳气泡「嘿嘿」\n' +
+  '  __test.feed()        — 模拟喂食 → 弹跳气泡\n' +
+  '  __test.play()        — 模拟玩耍 → 弹跳气泡\n' +
+  '  __test.lowHunger()   — 模拟饥饿 → 抖动气泡\n' +
+  '  __test.starve()      — 模拟极度饥饿 → 抖动气泡\n' +
+  '  __test.lowMood()     — 模拟心情低落 → 摇摆气泡\n' +
+  '  __test.highMood()    — 模拟心情高涨 → 弹跳气泡\n' +
   '  __test.showBubble("happy") — 直接显示气泡\n' +
   '  __test.state()       — 查看当前状态值\n' +
-  '  __test.save()        — 手动保存数据到磁盘\n' +
-  '  __test.load()        — 手动加载数据（可修改值后测试恢复）',
+  '  __test.save()        — 手动保存数据\n' +
+  '  __test.load()        — 手动加载数据',
   'color: #4CAF50; font-size: 14px;'
 );
 
-// 临时占位绘制：人 B 实现 Pet 类前，画一个圆形让透明窗口可见
-// 人 B 接管后由 Pet.draw() 替代
-function drawPlaceholder() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  ctx.fillStyle = '#ffcc66';
-  ctx.beginPath();
-  ctx.arc(cx, cy, 42, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#222';
-  ctx.beginPath();
-  ctx.arc(cx - 14, cy - 6, 5, 0, Math.PI * 2);
-  ctx.arc(cx + 14, cy - 6, 5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = '#222';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(cx, cy + 6, 8, 0, Math.PI);
-  ctx.stroke();
-}
-
-function init() {
-  // 里程碑1自测：确认 preload 桥接注入成功
+// ---------- 初始化 ----------
+async function init() {
   console.log('[app] window.petAPI =', window.petAPI);
   if (!window.petAPI) {
     console.error('[app] petAPI 未注入！检查 preload.js / contextIsolation 配置');
     return;
   }
 
-  // 占位渲染
-  drawPlaceholder();
-
-  // 加载持久化数据（人员 C：3.1）
-  load().then(() => {
-    status.createStatusBar(document.body);
-    status.start();
-  });
-
-  // TODO 里程碑4：B 实现 Pet 类后，实例化并启动渲染循环
-  // const pet = new Pet(canvas, eventBus);
-  // pet.startAutoBehavior();
-  // requestAnimationFrame(loop);
+  await loadState();
+  status.createStatusBar(document.body);
+  status.start();
+  pet.startAutoBehavior();
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
 }
 
-// 脚本位于 body 末尾，DOM 已就绪，直接初始化
 init();

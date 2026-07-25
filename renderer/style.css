@@ -14,8 +14,6 @@ html, body {
 
 #pet-canvas {
   display: block;
-  /* dev: 加边框便于里程碑1自测时看到透明窗口的位置；人 B 接管后可移除 */
-  border: 1px dashed rgba(0, 0, 0, 0.15);
 }
 
 #bubble-container,
@@ -25,6 +23,37 @@ html, body {
   left: 0;
   width: 100%;
   pointer-events: none;
+}
+
+/* ---------- 右键菜单（人 A，接口文档 §7）---------- */
+.context-menu {
+  position: absolute;
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  padding: 4px 0;
+  min-width: 96px;
+  font-size: 13px;
+  z-index: 10;
+}
+
+.menu-item {
+  padding: 6px 14px;
+  cursor: pointer;
+  color: #222;
+  white-space: nowrap;
+}
+
+.menu-item:hover {
+  background: #e8f0ff;
+}
+
+.menu-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: #e5e5e5;
 }
 
 /* ---------- 对话气泡（人员 C：bubble.js）---------- */
