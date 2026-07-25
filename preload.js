@@ -1,6 +1,6 @@
 // preload.js — 安全桥接（人 A）
 // 通过 contextBridge 暴露 window.petAPI，不直接暴露 ipcRenderer
-// 对应接口文档 §2.1
+// 对应接口文档 §2.1（含 F13/F15 扩展：setWindowPosition / getScreenSize）
 
 const { contextBridge, ipcRenderer } = require('electron');
 
@@ -10,8 +10,10 @@ contextBridge.exposeInMainWorld('petAPI', {
 
   // 窗口操作
   moveWindow: (dx, dy) => ipcRenderer.send('move-window', dx, dy),
+  setWindowPosition: (x, y) => ipcRenderer.send('set-window-position', x, y), // F13/F15
   setClickThrough: (enable) => ipcRenderer.send('set-click-through', enable),
   getWindowBounds: () => ipcRenderer.invoke('get-window-bounds'),
+  getScreenSize: () => ipcRenderer.invoke('get-screen-size'), // F13
 
   // 数据持久化
   saveData: (data) => ipcRenderer.send('save-data', data),

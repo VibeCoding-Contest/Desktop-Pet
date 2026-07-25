@@ -1,6 +1,6 @@
 // app.js — 渲染进程入口（人 A）
-// 职责：EventBus 单例、模块实例化与串联、全局事件、拖拽、右键菜单、渲染循环、持久化
-// 对应里程碑：M1(EventBus) / M2(拖拽) / M3(右键菜单) / M4(联调)
+// 职责：EventBus 单例、模块实例化与串联、全局事件、拖拽、右键菜单、跟随鼠标、渲染循环、持久化
+// 对应里程碑：M1(EventBus) / M2(拖拽) / M3(右键菜单) / M4(联调) / M5(跟随) / M6(吸附+持久化)
 
 // ---------- EventBus 事件总线（接口文档 §3.1）----------
 class EventBus {
@@ -50,6 +50,14 @@ let downClientY = 0;
 let mightClick = false;
 const CLICK_THRESHOLD = 4;
 
+// ---------- 跟随鼠标 F10（里程碑5）----------
+let followMode = false;
+let followTimer = null;
+let lastFollowMove = 0;
+const FOLLOW_DURATION = 2000; // 跟随持续 2 秒
+const FOLLOW_THROTTLE = 80;   // mousemove 节流 ms
+
+// 判断鼠标是否在宠物可交互区域（使用 B 的 pet.getBounds 精确边界）
 function isOverPet(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   const b = pet.getBounds();
@@ -93,6 +101,17 @@ window.addEventListener('mousemove', (e) => {
     }
     return;
   }
+  if (followMode) {
+    const now = performance.now();
+    if (now - lastFollowMove > FOLLOW_THROTTLE) {
+      lastFollowMove = now;
+      const rect = canvas.getBoundingClientRect();
+      const tx = (e.clientX - rect.left) - pet.width / 2;
+      const ty = (e.clientY - rect.top) - pet.height / 2;
+      pet.moveTo(tx, ty); // 限 canvas 内，pet 自动 clamp
+    }
+    return;
+  }
   if (menu.visible) { setClickThrough(false); return; }
   setClickThrough(!isOverPet(e.clientX, e.clientY));
 });
@@ -107,7 +126,23 @@ window.addEventListener('mouseup', async (e) => {
     showBubble('happy');
   } else {
     const bounds = await window.petAPI.getWindowBounds();
-    if (bounds) eventBus.emit('pet:dragEnd', { x: bounds.x, y: bounds.y });
+    if (bounds) {
+      eventBus.emit('pet:dragEnd', { x: bounds.x, y: bounds.y });
+      // F13 边缘吸附
+      const scr = await window.petAPI.getScreenSize();
+      if (scr) {
+        const SNAP = 24;
+        let nx = bounds.x, ny = bounds.y;
+        if (bounds.x <= SNAP) nx = 0;
+        else if (bounds.x + bounds.width >= scr.width - SNAP) nx = scr.width - bounds.width;
+        if (bounds.y <= SNAP) ny = 0;
+        else if (bounds.y + bounds.height >= scr.height - SNAP) ny = scr.height - bounds.height;
+        if (nx !== bounds.x || ny !== bounds.y) {
+          window.petAPI.setWindowPosition(nx, ny);
+        }
+      }
+    }
+    saveState(); // F15：拖拽结束持久化位置
   }
   setClickThrough(!isOverPet(e.clientX, e.clientY));
 });
@@ -118,6 +153,15 @@ canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   setClickThrough(false);
   menu.show(e.clientX, e.clientY);
+});
+
+// ---------- 跟随鼠标 F10（里程碑5）----------
+canvas.addEventListener('dblclick', (e) => {
+  e.preventDefault();
+  followMode = true;
+  setClickThrough(false); // 跟随期间保持可交互
+  if (followTimer) clearTimeout(followTimer);
+  followTimer = setTimeout(() => { followMode = false; }, FOLLOW_DURATION);
 });
 
 // ---------- 气泡定位辅助 ----------
@@ -169,7 +213,16 @@ async function loadState() {
     if (!data) return;
     if (data.pet && data.pet.type) pet.setPetType(data.pet.type);
     if (data.status) status.loadData(data.status);
-    console.log('[app] 数据已恢复:', data.status);
+    // F15：恢复窗口位置（并 clamp 到屏幕内，防止多屏/分辨率变化后离屏）
+    if (data.pet && typeof data.pet.x === 'number' && typeof data.pet.y === 'number') {
+      const scr = await window.petAPI.getScreenSize();
+      if (scr) {
+        const w = 220, h = 220; // 与 main.js 窗口尺寸一致
+        const x = Math.max(0, Math.min(data.pet.x, scr.width - w));
+        const y = Math.max(0, Math.min(data.pet.y, scr.height - h));
+        window.petAPI.setWindowPosition(x, y);
+      }
+    }
   } catch (e) {
     console.error('[app] loadState error:', e);
   }
@@ -282,6 +335,8 @@ async function init() {
   pet.startAutoBehavior();
   lastTime = performance.now();
   requestAnimationFrame(loop);
+  // F15：定时自动保存（防止托盘退出/异常关闭丢数据）
+  setInterval(() => { saveState(); }, 10000);
 }
 
 init();
