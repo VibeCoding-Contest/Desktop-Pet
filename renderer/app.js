@@ -51,7 +51,7 @@ let dragStartWinY = 0;
 let downClientX = 0;
 let downClientY = 0;
 let mightClick = false;
-const CLICK_THRESHOLD = 4;
+const CLICK_THRESHOLD = 10;
 let dragRAF = null;         // requestAnimationFrame id
 let dragTargetX = 0;        // 最新目标窗口位置
 let dragTargetY = 0;
@@ -75,6 +75,7 @@ let roamWinH = 220;
 let roamScrW = 1920;
 let roamScrH = 1080;
 let roamStarted = false;
+let menuPollTimer = null;
 
 // 判断鼠标是否在宠物可交互区域（使用 B 的 pet.getBounds 精确边界）
 function isOverPet(clientX, clientY) {
@@ -186,7 +187,6 @@ function updateRoam(dt) {
 
 canvas.addEventListener('mousedown', async (e) => {
   if (e.button !== 0) return;
-  stopRoam();
   isDragging = true;
   mightClick = true;
   dragStartScreenX = e.screenX;
@@ -207,6 +207,11 @@ window.addEventListener('mousemove', (e) => {
   if (isDragging) {
     if (mightClick && Math.hypot(e.clientX - downClientX, e.clientY - downClientY) > CLICK_THRESHOLD) {
       mightClick = false;
+      stopRoam();
+      dragStartScreenX = e.screenX;
+      dragStartScreenY = e.screenY;
+      dragStartWinX = roamWinX;
+      dragStartWinY = roamWinY;
     }
     if (!mightClick) {
       dragTargetX = dragStartWinX + (e.screenX - dragStartScreenX);
@@ -244,6 +249,11 @@ window.addEventListener('mouseup', async (e) => {
   dragRAF = null;
   updateStatusBarPosition();
   if (mightClick) {
+    if (roamEnabled) {
+      stopRoam();
+    } else {
+      resumeRoam();
+    }
     eventBus.emit('pet:clicked', { x: e.clientX, y: e.clientY });
     pet.jump();
     status.play(10);
@@ -267,9 +277,9 @@ window.addEventListener('mouseup', async (e) => {
       }
     }
     saveState(); // F15：拖拽结束持久化位置
+    resumeRoam();
   }
   setClickThrough(!isOverPet(e.clientX, e.clientY));
-  resumeRoam();
 });
 
 // ---------- 右键菜单（里程碑3）----------
@@ -277,6 +287,8 @@ window.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   setClickThrough(false);
+  stopRoam();
+  if (menuPollTimer) clearInterval(menuPollTimer);
   menu.show(e.clientX, e.clientY);
 });
 
