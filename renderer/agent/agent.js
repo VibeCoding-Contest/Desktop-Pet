@@ -34,6 +34,8 @@ class Agent {
       let guard = 0;
       while (resp.tool_calls && resp.tool_calls.length && guard < 5) {
         guard++;
+        // 回灌带 tool_calls 的 assistant 消息（OpenAI 规范：tool 结果必须跟在对应 assistant 之后）
+        this.history.push({ role: 'assistant', content: resp.content || '', tool_calls: resp.tool_calls });
         for (const call of resp.tool_calls) {
           const label = this._toolLabel(call.name);
           this.eventBus.emit('agent:toolCall', { name: call.name, label });
@@ -41,7 +43,7 @@ class Agent {
           let result;
           try { result = tool ? await tool.handler(call.arguments || {}) : { error: 'no such tool' }; }
           catch (e) { result = { error: String(e && e.message || e) }; }
-          this.history.push({ role: 'tool', name: call.name, content: JSON.stringify(result) });
+          this.history.push({ role: 'tool', tool_call_id: call.id, name: call.name, content: JSON.stringify(result) });
         }
         this._trim();
         resp = await this.llm.chat({ messages: this._full(), tools: this.tools.list() });
