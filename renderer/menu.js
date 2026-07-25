@@ -4,15 +4,21 @@
 const PET_TYPES = ['cat', 'dog', 'penguin'];
 let switchIdx = 0;
 
-// 菜单项配置：id -> { label, event }
+// 菜单项配置：id -> { label, event, data? }
 const MENU_CONFIG = {
   'feed':       { label: '喂食',     event: 'menu:feed' },
   'play':       { label: '玩耍',     event: 'menu:play' },
   'switch-pet': { label: '切换角色', event: 'menu:switchPet' },
+  'zoom-in':    { label: '放大',     event: 'menu:zoom', data: { action: 'in' } },
+  'zoom-out':   { label: '缩小',     event: 'menu:zoom', data: { action: 'out' } },
+  'zoom-reset': { label: '重置大小', event: 'menu:zoom', data: { action: 'reset' } },
+  'chat':       { label: '聊天',     event: 'menu:chat' },
+  'schedule':   { label: '日程',     event: 'menu:schedule' },
+  'settings':   { label: '设置',     event: 'menu:settings' },
   'exit':       { label: '退出',     event: 'menu:exit' },
 };
 
-const DEFAULT_ITEMS = ['feed', 'play', 'switch-pet', 'exit'];
+const DEFAULT_ITEMS = ['feed', 'play', 'switch-pet', 'divider', 'zoom-in', 'zoom-out', 'zoom-reset', 'divider', 'chat', 'schedule', 'settings', 'divider', 'exit'];
 
 class Menu {
   /**
@@ -56,7 +62,7 @@ class Menu {
       item.className = 'menu-item';
       item.textContent = cfg.label;
       item.addEventListener('click', () => {
-        let data;
+        let data = cfg.data;
         if (id === 'switch-pet') {
           switchIdx = (switchIdx + 1) % PET_TYPES.length;
           data = { type: PET_TYPES[switchIdx] };

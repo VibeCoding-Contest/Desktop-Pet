@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('petAPI', {
   setClickThrough: (enable) => ipcRenderer.send('set-click-through', enable),
   getWindowBounds: () => ipcRenderer.invoke('get-window-bounds'),
   getScreenSize: () => ipcRenderer.invoke('get-screen-size'), // F13
+  resizeWindow: (w, h) => ipcRenderer.send('resize-window', w, h), // G1 缩放
 
   // 数据持久化
   saveData: (data) => ipcRenderer.send('save-data', data),
@@ -22,6 +23,11 @@ contextBridge.exposeInMainWorld('petAPI', {
   // 托盘 / 退出
   minimizeToTray: () => ipcRenderer.send('minimize-to-tray'),
   closeApp: () => ipcRenderer.send('close-app'),
+
+  // 系统能力（G9/G6：B 的工具与 A 的提醒出口经此调用）
+  showNotification: (title, body) => ipcRenderer.send('show-notification', { title, body }),
+  openExternal: (url) => ipcRenderer.send('open-external', url),
+  systemPower: (action, delay = 0) => ipcRenderer.invoke('system-power', { action, delay }),
 
   // 主进程 → 渲染进程：托盘动作回调
   onTrayAction: (callback) => {

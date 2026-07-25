@@ -2,9 +2,10 @@
 // 职责：透明无边框窗口、IPC handler、系统托盘(F14)、退出保存
 // 对应里程碑：M1(窗口+IPC) / M6(托盘F14+边缘吸附F13支撑+持久化F15)
 
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, Notification, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { exec } = require('child_process');
 
 let win = null;
 let tray = null;
@@ -12,12 +13,12 @@ let isQuitting = false;
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 220,
-    height: 220,
+    width: 360,
+    height: 360,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
-    resizable: false,
+    resizable: true,
     hasShadow: false,
     skipTaskbar: true,
     webPreferences: {
@@ -114,6 +115,49 @@ ipcMain.on('set-click-through', (_e, enable) => {
 });
 
 ipcMain.handle('get-window-bounds', () => win ? win.getBounds() : null);
+
+// 缩放窗口尺寸（G1：菜单/滚轮缩放时同步窗口，保持透明边框比例）
+ipcMain.on('resize-window', (_e, w, h) => {
+  if (!win) return;
+  const nw = Math.max(160, Math.round(w));
+  const nh = Math.max(160, Math.round(h));
+  win.setSize(nw, nh);
+});
+
+// 系统通知（G6：日程到期提醒出口）
+ipcMain.on('show-notification', (_e, { title, body }) => {
+  try {
+    if (Notification.isSupported()) {
+      new Notification({ title: String(title || '桌宠管家'), body: String(body || '') }).show();
+    }
+  } catch (e) { console.error('[main] notification error:', e); }
+});
+
+// 打开外部网址（G9：system.openUrl 工具）
+ipcMain.on('open-external', (_e, url) => {
+  try { if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url); }
+  catch (e) { console.error('[main] open-external error:', e); }
+});
+
+// 系统电源（G9：关机/休眠，带二次确认）
+ipcMain.handle('system-power', (_e, { action, delay = 0 }) => {
+  const cmd = {
+    shutdown: { linux: 'shutdown -h now', win: 'shutdown /s /t', mac: 'shutdown -h now' },
+    sleep: { linux: 'systemctl suspend', win: 'rundll32.exe powrprof.dll,SetSuspendState 0,1,0', mac: 'pmset sleepnow' },
+  }[action];
+  if (!cmd) return { ok: false, error: 'unknown action' };
+  const plat = process.platform === 'win32' ? 'win' : process.platform === 'darwin' ? 'mac' : 'linux';
+  const base = cmd[plat];
+  const full = action === 'shutdown' && plat === 'win' ? `${base} ${Math.max(0, delay)}` : base;
+  const result = dialog.showMessageBoxSync(win, {
+    type: 'warning', buttons: ['取消', '确认执行'], defaultId: 0, cancelId: 0,
+    title: '桌宠管家 - 系统操作确认', message: `即将执行：${action}`,
+    detail: `命令：${full}\n请确认是否继续。`,
+  });
+  if (result !== 1) return { ok: false, canceled: true };
+  exec(full, () => {});
+  return { ok: true };
+});
 
 // 屏幕工作区尺寸（F13 吸附用）
 ipcMain.handle('get-screen-size', () => {

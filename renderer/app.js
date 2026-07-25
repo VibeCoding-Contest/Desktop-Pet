@@ -35,6 +35,7 @@ const pet    = new Pet(canvas, eventBus);
 const status = new Status(eventBus);
 const bubble = new Bubble(document.getElementById('bubble-container'));
 const menu   = new Menu(document.getElementById('menu-container'));
+const chat   = new Chat(document.getElementById('chat-panel'), eventBus);
 
 // ---------- 平台 / 点击穿透（里程碑2）----------
 // Linux 下 setIgnoreMouseEvents(forward) 不可靠，默认不启用穿透
@@ -308,6 +309,83 @@ eventBus.on('menu:feed', () => { status.feed(30); showBubble('feed'); });
 eventBus.on('menu:play', () => { status.play(10); showBubble('play'); });
 eventBus.on('menu:switchPet', (data) => { if (data && data.type) pet.setPetType(data.type); });
 
+// ---------- G1 缩放：滚轮 + 菜单 ----------
+const ZOOM_MIN = 0.6, ZOOM_MAX = 2.5, ZOOM_STEP = 0.15;
+function applyZoom(action) {
+  let s = pet.getScale();
+  if (action === 'in') s = Math.min(ZOOM_MAX, s + ZOOM_STEP);
+  else if (action === 'out') s = Math.max(ZOOM_MIN, s - ZOOM_STEP);
+  else if (action === 'reset') s = 1;
+  else return;
+  pet.setScale(s);
+  // 同步窗口尺寸，保持角色在画面中比例（窗口 = canvas 基础 320 × scale 的放大）
+  const base = 320;
+  window.petAPI.resizeWindow(Math.round(base * s) + 40, Math.round(base * s) + 40);
+  saveState();
+}
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  applyZoom(e.deltaY < 0 ? 'in' : 'out');
+}, { passive: false });
+eventBus.on('menu:zoom', (d) => applyZoom(d && d.action));
+
+// ---------- G2 聊天面板：菜单入口 + 快捷键 ----------
+// 注：canvas 双击已被 F10 跟随鼠标占用，故聊天面板用菜单 + Ctrl+Shift+P 触发
+eventBus.on('menu:chat', () => chat.open());
+eventBus.on('menu:schedule', () => { chat.open(); /* TODO A3：切到日程 tab */ });
+eventBus.on('menu:settings', () => { chat.open(); /* TODO A3：切到设置 tab */ });
+window.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+    e.preventDefault();
+    chat.toggle();
+  } else if (e.key === 'Escape' && chat.isOpen) {
+    chat.close();
+  }
+});
+
+// ---------- A 的编排骨架：agent:* 事件 → 聊天/气泡呈现 ----------
+// B 的 Agent 内核就绪前，chat 占位回显；就绪后真实回复经 agent:reply 走这里
+eventBus.on('agent:reply', ({ text, bubble } = {}) => {
+  // bubble=true：把回复首句同步显示为宠物头顶气泡（管家口头反馈）
+  if (bubble && typeof text === 'string') {
+    const first = text.split('\n')[0].slice(0, 40);
+    showBubble('idle', { text: first, duration: 4000 });
+  }
+});
+
+// ---------- A4：日程提醒 → 系统通知 + 气泡（B 的 scheduler 发事件，A 负责呈现）----------
+eventBus.on('schedule:due', ({ item } = {}) => {
+  const title = (item && item.title) || '提醒';
+  const when = item && item.datetime ? new Date(item.datetime).toLocaleTimeString() : '';
+  if (window.petAPI && window.petAPI.showNotification) {
+    window.petAPI.showNotification('桌宠管家·日程提醒', `${when ? when + ' ' : ''}${title}`);
+  }
+  showBubble('idle', { text: `该${title}啦！`, duration: 5000 });
+});
+eventBus.on('schedule:dailyReport', ({ items } = {}) => {
+  const n = Array.isArray(items) ? items.length : 0;
+  if (window.petAPI && window.petAPI.showNotification) {
+    window.petAPI.showNotification('桌宠管家·今日早报', `今天有 ${n} 项任务待完成`);
+  }
+  chat.open();
+  showBubble('idle', { text: `早上好！今天有 ${n} 项任务`, duration: 5000 });
+});
+
+// ---------- A3：Agent 编排（防御性，B 接入后自动生效）----------
+// 契约：B 在 index.html 加载 agent/agent.js、agent/llm.js、agent/tools/index.js，
+//       分别暴露 window.Agent / window.LLMClient / window.agentTools（{list,get}）。
+if (typeof window.Agent === 'function') {
+  try {
+    const llm = typeof window.LLMClient === 'function' ? new window.LLMClient() : null;
+    const tools = window.agentTools || { list: () => [], get: () => null };
+    window.__agent = new window.Agent(eventBus, { llm, tools });
+    chat.markAgentReady();
+    console.log('[app] Agent 已接入（B）');
+  } catch (e) { console.error('[app] Agent init failed:', e); }
+} else {
+  console.log('[app] Agent 未接入，聊天面板走占位回显');
+}
+
 // ---------- 状态事件 → 气泡 / 动画（接口文档 §5.4）----------
 eventBus.on('status:hungry', () => showBubble('hungry'));
 eventBus.on('status:starving', () => showBubble('hungry', { text: '快饿死了…' }));
@@ -321,7 +399,7 @@ async function saveState() {
   try {
     const bounds = await window.petAPI.getWindowBounds();
     const data = {
-      pet: { type: pet.petType, x: bounds ? bounds.x : 0, y: bounds ? bounds.y : 0 },
+      pet: { type: pet.petType, x: bounds ? bounds.x : 0, y: bounds ? bounds.y : 0, scale: pet.getScale() },
       status: status.getData(),
       timestamp: Date.now(),
     };
@@ -337,12 +415,13 @@ async function loadState() {
     const data = await window.petAPI.loadData();
     if (!data) return;
     if (data.pet && data.pet.type) pet.setPetType(data.pet.type);
+    if (data.pet && typeof data.pet.scale === 'number') pet.setScale(data.pet.scale);
     if (data.status) status.loadData(data.status);
     // F15：恢复窗口位置（并 clamp 到屏幕内，防止多屏/分辨率变化后离屏）
     if (data.pet && typeof data.pet.x === 'number' && typeof data.pet.y === 'number') {
       const scr = await window.petAPI.getScreenSize();
       if (scr) {
-        const w = 220, h = 220; // 与 main.js 窗口尺寸一致
+        const w = 360, h = 360; // 与 main.js 窗口默认尺寸一致
         const x = Math.max(0, Math.min(data.pet.x, scr.width - w));
         const y = Math.max(0, Math.min(data.pet.y, scr.height - h));
         window.petAPI.setWindowPosition(x, y);
@@ -429,6 +508,21 @@ window.__test = {
     console.log('[test] 手动加载');
     loadState().then(() => console.log('[test] 加载完成'));
   },
+  // ---- Agent 升级自测 ----
+  chat() { console.log('[test] 打开聊天面板'); chat.open(); },
+  mockReply(text) {
+    console.log('[test] 模拟 Agent 回复');
+    eventBus.emit('agent:reply', { text: text || '你好呀，我是桌宠管家~', bubble: true });
+  },
+  mockDue(title) {
+    console.log('[test] 模拟日程到期');
+    eventBus.emit('schedule:due', { item: { title: title || '开会', datetime: Date.now() } });
+  },
+  mockReport(n) {
+    console.log('[test] 模拟每日早报');
+    eventBus.emit('schedule:dailyReport', { items: new Array(n || 3) });
+  },
+  zoom(s) { console.log('[test] 设置缩放', s); pet.setScale(s); },
 };
 
 console.log(
@@ -443,7 +537,12 @@ console.log(
   '  __test.showBubble("happy") — 直接显示气泡\n' +
   '  __test.state()       — 查看当前状态值\n' +
   '  __test.save()        — 手动保存数据\n' +
-  '  __test.load()        — 手动加载数据',
+  '  __test.load()        — 手动加载数据\n' +
+  '  __test.chat()        — 打开聊天面板\n' +
+  '  __test.mockReply()   — 模拟 Agent 回复(气泡+面板)\n' +
+  '  __test.mockDue()     — 模拟日程到期(系统通知+气泡)\n' +
+  '  __test.mockReport()  — 模拟每日早报\n' +
+  '  __test.zoom(1.5)     — 设置缩放(0.6–2.5)',
   'color: #4CAF50; font-size: 14px;'
 );
 
