@@ -90,18 +90,18 @@
 > 总时长约 1.5h（P0）+ 0.5h（P1）+ 0.5h（P2），与团队时间线对齐。
 
 ### 里程碑 0：分支与骨架（0:00–0:15，全员协作）
-- [ ] 从 `main` 拉最新代码
-- [ ] 创建并切换到 `feat/window` 分支
-- [ ] 在 `index.html` 写好三容器骨架；`style.css` 写透明 body + 容器 reset
-- [ ] commit："chore: 建立渲染层骨架(index.html/style.css)"
-- [ ] push `feat/window`，建 PR 占位（Draft）
+- [x] 从 `main` 拉最新代码
+- [x] 创建并切换到 `feat/window` 分支
+- [x] 在 `index.html` 写好三容器骨架；`style.css` 写透明 body + 容器 reset
+- [ ] commit："chore: 建立渲染层骨架(index.html/style.css)" —— 待执行（见 §十 实现记录）
+- [ ] push `feat/window`，建 PR 占位（Draft）—— 待执行
 
 ### 里程碑 1：透明窗口 + IPC（0:15–0:45）
-- [ ] `main.js`：BrowserWindow 配置（transparent/frame/alwaysOnTop/hasShadow）
-- [ ] `main.js`：注册 IPC handler：`move-window`、`set-click-through`、`get-window-bounds`、`save-data`、`load-data`
-- [ ] `preload.js`：contextBridge 暴露 `window.petAPI`（全部 API 见接口文档 §2.1）
-- [ ] `app.js`：创建 `EventBus` 单例（简单实现 on/off/emit 即可，或与 C 共用）
-- [ ] **自测**：`npm start` 能弹出透明窗口，`window.petAPI` 在 DevTools 可见
+- [x] `main.js`：BrowserWindow 配置（transparent/frame/alwaysOnTop/hasShadow）
+- [x] `main.js`：注册 IPC handler：`move-window`、`set-click-through`、`get-window-bounds`、`save-data`、`load-data`
+- [x] `preload.js`：contextBridge 暴露 `window.petAPI`（全部 API 见接口文档 §2.1）
+- [x] `app.js`：创建 `EventBus` 单例（简单实现 on/off/emit 即可，或与 C 共用）
+- [ ] **自测**：`npm start` 能弹出透明窗口，`window.petAPI` 在 DevTools 可见 —— 代码已写、语法校验通过；沙箱无网络无法下载 Electron 二进制，需在本机 `npm start` 验证（见 §十）
 
 ### 里程碑 2：拖拽移动（0:45–1:15，与 B 并行）
 - [ ] `app.js`：canvas `mousedown`→记录起点+关穿透；`mousemove`→`emit('pet:dragging')`+`moveWindow`；`mouseup`→`emit('pet:dragEnd')`+恢复穿透
@@ -226,6 +226,44 @@ contextBridge.exposeInMainWorld('petAPI', {
 | 拖拽时窗口抖动 | 用增量 `dx/dy` 而非绝对坐标；`mousemove` 节流 |
 | 透明窗口在某些 Linux 桌面不生效 | 记录为已知限制，Windows/macOS 优先保证 |
 | IPC 暴露过多权限 | 严格通过 contextBridge 白名单暴露，不直接 expose `ipcRenderer` |
+
+---
+
+## 十、里程碑 1 实现记录（更新于 2026-07-25）
+
+### 10.1 本次改动文件
+| 文件 | 改动 | 说明 |
+|------|------|------|
+| `main.js` | 新建 | 透明无边框窗口 + 全部 IPC handler（move-window / set-click-through / get-window-bounds / save-data / load-data / close-app / minimize-to-tray）|
+| `preload.js` | 新建 | contextBridge 暴露 `window.petAPI`（接口文档 §2.1 全量 API）|
+| `renderer/index.html` | 新建 | 三容器骨架：`#pet-canvas` / `#bubble-container` / `#menu-container`；脚本加载顺序 pet→status→bubble→menu→app |
+| `renderer/style.css` | 新建 | 透明 body、容器 reset、canvas dev 边框（人 B 接管后可移除）|
+| `renderer/app.js` | 新建 | `EventBus` 类 + `window.eventBus` 单例 + 占位绘制 + 自测日志；模块实例化留到里程碑 4 |
+| `package.json` | 修改 | `main` 由 `index.js` 改为 `main.js`；补 `start`/`build` 脚本；补 `build` 配置块；`description` |
+
+### 10.2 关键实现决策
+1. **点击穿透默认开启**：`win.setIgnoreMouseEvents(true, {forward:true})`，保证透明 220×220 窗口不挡其他应用；交互时由渲染层 `setClickThrough(false)` 关闭（里程碑 2/3 实现）。
+2. **持久化用 JSON 文件而非 localStorage**：主进程无法访问 localStorage，改用 `app.getPath('userData')/pet-save.json` 读写（接口文档 §6.2 描述为主进程写入，此处落地）。
+3. **EventBus 暴露为 `window.eventBus`**：B/C 模块（pet/status/bubble/menu）通过 `window.eventBus` 订阅/发布，避免改各自构造签名；`on()` 返回取消函数便于解绑。
+4. **app.js 暂不实例化 B/C 模块**：里程碑 1 只交付地基，`new Pet/Status/Bubble/Menu` 留到里程碑 4 联调；占位圆形绘制让透明窗口在自测时可见。
+5. **`minimize-to-tray` 兜底为 `hide()`**：托盘（F14）未实现前先隐藏窗口，避免功能缺失导致卡死。
+6. **index.html 脚本顺序**：类定义在前、`app.js` 最后，使 `app.js` 能引用各全局 `class`（classic script 顶层 class 为全局词法绑定）。
+
+### 10.3 验证情况
+- [x] `node --check main.js / preload.js / renderer/app.js` 全部通过
+- [x] `package.json` JSON 合法
+- [x] index.html 引用的脚本文件均存在
+- [ ] **运行时自测未完成**：沙箱无网络，Electron 二进制未下载（`node_modules/electron/dist/electron` 缺失，`install.js` fetch failed）。需在本机执行 `npm install`（补二进制）后 `npm start` 验证：透明窗口弹出、DevTools Console 打印 `[app] window.petAPI = {…}`、占位圆形可见。
+
+### 10.4 与 B/C 的接口交付状态（A 侧已就绪）
+- `window.petAPI` ✅ 全量暴露，B/C 无需等待
+- `window.eventBus` ✅ 单例就绪，B/C 可直接订阅事件
+- `index.html` ✅ 三容器 ID 固定（`#pet-canvas`/`#bubble-container`/`#menu-container`），B/C 据此挂载
+- 待里程碑 2/3 完成 `pet:dragging`/`menu:*` 事件流转后即可全链路联调
+
+### 10.5 下一步
+- 里程碑 2（拖拽移动）+ 里程碑 3（右键菜单）—— 与 B 并行，依赖里程碑 1 地基（已完成）
+- 完成后建议统一 commit + push `feat/window` 并建 PR
 
 ---
 
