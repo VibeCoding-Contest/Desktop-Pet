@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, Notificati
 const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
+const { pathToFileURL } = require('url');
 
 let win = null;
 let tray = null;
@@ -182,6 +183,81 @@ ipcMain.handle('load-data', () => {
     if (!fs.existsSync(saveFile())) return null;
     return JSON.parse(fs.readFileSync(saveFile(), 'utf8'));
   } catch (err) { console.error('[main] load-data error:', err); return null; }
+});
+
+// ---------- 自定义形象持久化（升级功能：自定义形象导入）----------
+// userData/custom-pets/ 下存 index.json + {id}.{ext} 图片文件
+const customDir = () => path.join(app.getPath('userData'), 'custom-pets');
+const indexFile = () => path.join(customDir(), 'index.json');
+
+function loadCustomIndex() {
+  try {
+    if (!fs.existsSync(indexFile())) return { version: 1, pets: [] };
+    return JSON.parse(fs.readFileSync(indexFile(), 'utf8')) || { version: 1, pets: [] };
+  } catch (e) {
+    console.error('[main] load-custom-index error:', e);
+    return { version: 1, pets: [] };
+  }
+}
+function saveCustomIndex(idx) {
+  fs.mkdirSync(customDir(), { recursive: true });
+  fs.writeFileSync(indexFile(), JSON.stringify(idx, null, 2));
+}
+
+// 渲染进程传 base64 data URL → 写图片文件 + 更新索引
+ipcMain.handle('save-custom-pet', (_e, config) => {
+  if (!config || !config.id || !config.imageSrc) {
+    throw new Error('invalid config (id/imageSrc required)');
+  }
+  const m = /^data:image\/([\w.+-]+);base64,(.+)$/.exec(config.imageSrc);
+  if (!m) throw new Error('invalid imageSrc (expect data URL)');
+  const ext = m[1] === 'jpeg' ? 'jpg' : m[1];
+  const file = `${config.id}.${ext}`;
+  fs.mkdirSync(customDir(), { recursive: true });
+  fs.writeFileSync(path.join(customDir(), file), Buffer.from(m[2], 'base64'));
+
+  const idx = loadCustomIndex();
+  const entry = {
+    id: config.id,
+    label: config.label || config.id,
+    imageFile: file,
+    width: config.width || 64,
+    height: config.height || 64,
+    overlay: config.overlay || { eyes: false, mouth: false, tear: true },
+  };
+  const i = idx.pets.findIndex(p => p.id === config.id);
+  if (i >= 0) idx.pets[i] = entry; else idx.pets.push(entry);
+  saveCustomIndex(idx);
+
+  const abs = path.join(customDir(), file);
+  return { ok: true, path: abs, url: pathToFileURL(abs).href };
+});
+
+// 启动时读取所有自定义形象
+ipcMain.handle('load-custom-pets', () => {
+  return loadCustomIndex().pets.map(p => {
+    const abs = path.join(customDir(), p.imageFile);
+    return {
+      id: p.id,
+      label: p.label,
+      imageSrc: fs.existsSync(abs) ? pathToFileURL(abs).href : '',
+      width: p.width,
+      height: p.height,
+      overlay: p.overlay || { eyes: false, mouth: false, tear: true },
+    };
+  }).filter(p => p.imageSrc);
+});
+
+// 删除单个自定义形象
+ipcMain.handle('delete-custom-pet', (_e, id) => {
+  const idx = loadCustomIndex();
+  const i = idx.pets.findIndex(p => p.id === id);
+  if (i < 0) return { ok: false };
+  const f = path.join(customDir(), idx.pets[i].imageFile);
+  try { fs.unlinkSync(f); } catch (e) { void 0; }
+  idx.pets.splice(i, 1);
+  saveCustomIndex(idx);
+  return { ok: true };
 });
 
 // 退出 / 最小化

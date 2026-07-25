@@ -4,6 +4,7 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body {
+  position: relative;
   width: 100%;
   height: 100%;
   background: transparent;
@@ -36,7 +37,7 @@ html, body {
   padding: 4px 0;
   min-width: 96px;
   font-size: 13px;
-  z-index: 10;
+  z-index: 1001;
 }
 
 .menu-item {
@@ -48,6 +49,38 @@ html, body {
 
 .menu-item:hover {
   background: #e8f0ff;
+}
+
+/* 带子菜单的触发项：左右两端对齐 */
+.menu-item--has-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  position: relative;
+}
+.menu-item-label { flex: 1; }
+.menu-item-arrow {
+  font-size: 11px;
+  color: #888;
+}
+.menu-item--active {
+  color: #4a7bd0;
+  font-weight: 600;
+}
+
+/* 角色子菜单（浮出右侧） */
+.context-submenu {
+  position: fixed;
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  padding: 4px 0;
+  min-width: 96px;
+  font-size: 13px;
+  z-index: 11;
 }
 
 .menu-divider {
@@ -298,3 +331,148 @@ html, body {
   font-size: 13px;
 }
 .chat-send:hover { background: #3a6bc0; }
+
+/* ---------- 自定义形象创建器（升级功能）---------- */
+.pet-creator-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  pointer-events: auto;
+  font-size: 13px;
+}
+
+.pet-creator {
+  width: 460px;
+  max-width: 92vw;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: #333;
+}
+
+.pet-creator-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #eee;
+  background: #fafafa;
+  font-weight: 600;
+}
+.pet-creator-close {
+  border: none; background: transparent; font-size: 18px; line-height: 1;
+  color: #999; cursor: pointer; padding: 2px 6px; border-radius: 4px;
+}
+.pet-creator-close:hover { background: #eee; color: #333; }
+
+.pet-creator-body {
+  display: flex;
+  gap: 14px;
+  padding: 14px;
+}
+.pet-creator-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 168px;
+  flex: 0 0 168px;
+}
+.pet-creator-filebtn {
+  display: inline-block;
+  padding: 6px 14px;
+  background: #4a7bd0;
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.pet-creator-filebtn:hover { background: #3a6bc0; }
+.pet-creator-preview {
+  width: 160px;
+  height: 160px;
+  background:
+    linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%) 0 0 / 16px 16px,
+    linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%) 8px 8px / 16px 16px,
+    #fff;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+}
+.pet-creator-hint { font-size: 11px; color: #999; }
+
+.pet-creator-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pc-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #555;
+}
+.pc-field > span { width: 48px; flex: 0 0 48px; }
+.pc-field input[type="text"],
+.pc-field input[type="number"] {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font: 13px/1.4 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  outline: none;
+  min-width: 0;
+}
+.pc-field input:focus { border-color: #4a7bd0; }
+.pc-row { gap: 4px; }
+.pc-row > label { flex: 1; display: flex; align-items: center; gap: 4px; }
+.pc-row > label > span { width: auto; flex: 0 0 auto; }
+.pc-row .pc-x { color: #999; }
+
+.pc-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #555;
+  cursor: pointer;
+}
+.pc-check input { margin: 0; }
+
+.pet-creator-error {
+  min-height: 16px;
+  color: #d33;
+  font-size: 12px;
+}
+
+.pet-creator-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid #eee;
+  background: #fafafa;
+}
+.pc-btn {
+  padding: 6px 16px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+  font-size: 13px;
+}
+.pc-btn:hover { background: #f0f0f0; }
+.pc-submit {
+  background: #4a7bd0;
+  color: #fff;
+  border-color: #4a7bd0;
+}
+.pc-submit:hover { background: #3a6bc0; }

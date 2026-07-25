@@ -36,6 +36,8 @@ const status = new Status(eventBus);
 const bubble = new Bubble(document.getElementById('bubble-container'));
 const menu   = new Menu(document.getElementById('menu-container'));
 const chat   = new Chat(document.getElementById('chat-panel'), eventBus);
+// 子菜单高亮当前角色
+menu.setCurrentTypeGetter(() => pet.petType);
 
 // ---------- 平台 / 点击穿透（里程碑2）----------
 // Linux 下 setIgnoreMouseEvents(forward) 不可靠，默认不启用穿透
@@ -51,7 +53,7 @@ let dragStartWinY = 0;
 let downClientX = 0;
 let downClientY = 0;
 let mightClick = false;
-const CLICK_THRESHOLD = 4;
+const CLICK_THRESHOLD = 10;
 let dragRAF = null;         // requestAnimationFrame id
 let dragTargetX = 0;        // 最新目标窗口位置
 let dragTargetY = 0;
@@ -75,6 +77,7 @@ let roamWinH = 220;
 let roamScrW = 1920;
 let roamScrH = 1080;
 let roamStarted = false;
+let menuPollTimer = null;
 
 // 判断鼠标是否在宠物可交互区域（使用 B 的 pet.getBounds 精确边界）
 function isOverPet(clientX, clientY) {
@@ -186,7 +189,7 @@ function updateRoam(dt) {
 
 canvas.addEventListener('mousedown', async (e) => {
   if (e.button !== 0) return;
-  stopRoam();
+  if (chat.isOpen) return;
   isDragging = true;
   mightClick = true;
   dragStartScreenX = e.screenX;
@@ -207,6 +210,11 @@ window.addEventListener('mousemove', (e) => {
   if (isDragging) {
     if (mightClick && Math.hypot(e.clientX - downClientX, e.clientY - downClientY) > CLICK_THRESHOLD) {
       mightClick = false;
+      stopRoam();
+      dragStartScreenX = e.screenX;
+      dragStartScreenY = e.screenY;
+      dragStartWinX = roamWinX;
+      dragStartWinY = roamWinY;
     }
     if (!mightClick) {
       dragTargetX = dragStartWinX + (e.screenX - dragStartScreenX);
@@ -233,7 +241,7 @@ window.addEventListener('mousemove', (e) => {
     }
     return;
   }
-  if (menu.visible) { setClickThrough(false); return; }
+  if (menu.visible || chat.isOpen) { setClickThrough(false); return; }
   setClickThrough(!isOverPet(e.clientX, e.clientY));
 });
 
@@ -244,6 +252,7 @@ window.addEventListener('mouseup', async (e) => {
   dragRAF = null;
   updateStatusBarPosition();
   if (mightClick) {
+    stopRoam();
     eventBus.emit('pet:clicked', { x: e.clientX, y: e.clientY });
     pet.jump();
     status.play(10);
@@ -267,9 +276,9 @@ window.addEventListener('mouseup', async (e) => {
       }
     }
     saveState(); // F15：拖拽结束持久化位置
+    resumeRoam();
   }
   setClickThrough(!isOverPet(e.clientX, e.clientY));
-  resumeRoam();
 });
 
 // ---------- 右键菜单（里程碑3）----------
@@ -277,14 +286,20 @@ window.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   setClickThrough(false);
+  stopRoam();
+  if (menuPollTimer) clearInterval(menuPollTimer);
   menu.show(e.clientX, e.clientY);
 });
 
-// ---------- 跟随鼠标 F10（里程碑5）----------
+// ---------- 双击：开始漫游 / 跟随鼠标 F10 ----------
 canvas.addEventListener('dblclick', (e) => {
   e.preventDefault();
+  if (!roamEnabled) {
+    resumeRoam();
+    return;
+  }
   followMode = true;
-  setClickThrough(false); // 跟随期间保持可交互
+  setClickThrough(false);
   if (followTimer) clearTimeout(followTimer);
   followTimer = setTimeout(() => { followMode = false; }, FOLLOW_DURATION);
 });
@@ -308,6 +323,26 @@ eventBus.on('menu:exit', async () => {
 eventBus.on('menu:feed', () => { status.feed(30); showBubble('feed'); });
 eventBus.on('menu:play', () => { status.play(10); showBubble('play'); });
 eventBus.on('menu:switchPet', (data) => { if (data && data.type) pet.setPetType(data.type); });
+
+// ---------- 升级功能：自定义形象创建器 ----------
+eventBus.on('menu:openCreator', () => {
+  if (typeof PetCreator === 'undefined' || !PetCreator.open) {
+    console.warn('[app] PetCreator 未加载');
+    return;
+  }
+  PetCreator.open({ canvas, pet, eventBus });
+});
+// 自定义形象注册后刷新（菜单下次 show 自动反映，无需额外操作）
+eventBus.on('pet:customAdded', (d) => {
+  console.log('[app] 自定义形象已添加:', d && d.id);
+});
+// 删除当前在用的自定义形象时切回 cat（预留：管理面板接入后生效）
+eventBus.on('pet:customRemoved', ({ id } = {}) => {
+  if (pet.petType === id) {
+    pet.setPetType('cat');
+    eventBus.emit('menu:switchPet', { type: 'cat' });
+  }
+});
 
 // ---------- G1 缩放：滚轮 + 菜单 ----------
 const ZOOM_MIN = 0.6, ZOOM_MAX = 2.5, ZOOM_STEP = 0.15;
@@ -342,6 +377,39 @@ window.addEventListener('keydown', (e) => {
     chat.close();
   }
 });
+
+// ---------- 聊天面板打开/关闭时调整窗口大小 ----------
+let savedWinW = 360;
+let savedWinH = 360;
+
+eventBus.on('chat:open', async () => {
+  stopRoam();
+  const bounds = await window.petAPI.getWindowBounds();
+  if (bounds) {
+    savedWinW = bounds.width;
+    savedWinH = bounds.height;
+  }
+  await fitWindowToScreen(600, 500);
+});
+
+eventBus.on('chat:close', async () => {
+  await fitWindowToScreen(savedWinW, savedWinH);
+});
+
+async function fitWindowToScreen(w, h) {
+  const bounds = await window.petAPI.getWindowBounds();
+  const scr = await window.petAPI.getScreenSize();
+  if (!bounds || !scr) {
+    window.petAPI.resizeWindow(w, h);
+    return;
+  }
+  let nx = bounds.x;
+  let ny = bounds.y;
+  if (nx + w > scr.width) nx = Math.max(0, scr.width - w);
+  if (ny + h > scr.height) ny = Math.max(0, scr.height - h);
+  window.petAPI.resizeWindow(w, h);
+  window.petAPI.setWindowPosition(nx, ny);
+}
 
 // ---------- A 的编排骨架：agent:* 事件 → 聊天/气泡呈现 ----------
 // B 的 Agent 内核就绪前，chat 占位回显；就绪后真实回复经 agent:reply 走这里
@@ -402,6 +470,23 @@ eventBus.on('status:sad', () => { showBubble('sad'); pet.setState('sad', { force
 eventBus.on('status:happy', () => { pet.setState('idle', { force: true }); showBubble('happy'); });
 eventBus.on('status:fed', () => showBubble('feed'));
 eventBus.on('status:played', () => showBubble('happy'));
+
+// ---------- 加载自定义形象（升级功能）----------
+// 启动时：先加载并注册所有自定义形象，再 loadState（保证存档里的自定义 id 可恢复）
+async function loadCustomPets() {
+  if (!window.petAPI || !window.petAPI.loadCustomPets) return;
+  try {
+    const customs = await window.petAPI.loadCustomPets();
+    window.__customPets = Array.isArray(customs) ? customs : [];
+    window.__customPets.forEach((c) => {
+      if (typeof registerCustomPet === 'function') registerCustomPet(c);
+    });
+    console.log('[app] 自定义形象已加载:', window.__customPets.map((c) => c.id));
+  } catch (e) {
+    console.error('[app] loadCustomPets error:', e);
+    window.__customPets = [];
+  }
+}
 
 // ---------- 数据持久化 ----------
 async function saveState() {
@@ -532,6 +617,26 @@ window.__test = {
     eventBus.emit('schedule:dailyReport', { items: new Array(n || 3) });
   },
   zoom(s) { console.log('[test] 设置缩放', s); pet.setScale(s); },
+  // ---- 自定义形象（升级功能）自测 ----
+  openCreator() { console.log('[test] 打开自定义形象创建器'); eventBus.emit('menu:openCreator'); },
+  listCustoms() {
+    const list = (window.__customPets || []).map((c) => ({ id: c.id, label: c.label }));
+    console.table(list);
+    return list;
+  },
+  async deleteCustomPet(id) {
+    if (!window.petAPI || !window.petAPI.deleteCustomPet) { console.warn('[test] petAPI.deleteCustomPet 不可用'); return; }
+    const r = await window.petAPI.deleteCustomPet(id);
+    console.log('[test] 删除自定义形象', id, '→', r);
+    if (r && r.ok) {
+      // 从内存列表移除
+      window.__customPets = (window.__customPets || []).filter((c) => c.id !== id);
+      if (typeof Pet !== 'undefined' && Pet.TYPES) delete Pet.TYPES[id];
+      eventBus.emit('pet:customRemoved', { id });
+    }
+    return r;
+  },
+  switchPet(type) { console.log('[test] 切换形象 →', type); eventBus.emit('menu:switchPet', { type }); },
 };
 
 console.log(
@@ -551,7 +656,12 @@ console.log(
   '  __test.mockReply()   — 模拟 Agent 回复(气泡+面板)\n' +
   '  __test.mockDue()     — 模拟日程到期(系统通知+气泡)\n' +
   '  __test.mockReport()  — 模拟每日早报\n' +
-  '  __test.zoom(1.5)     — 设置缩放(0.6–2.5)',
+  '  __test.zoom(1.5)     — 设置缩放(0.6–2.5)\n' +
+  '  ---- 自定义形象(升级功能) ----\n' +
+  '  __test.openCreator() — 打开自定义形象创建器\n' +
+  '  __test.listCustoms() — 列出已加载的自定义形象\n' +
+  '  __test.switchPet("cat") — 切换形象\n' +
+  '  __test.deleteCustomPet("kobe") — 删除自定义形象(切回cat)',
   'color: #4CAF50; font-size: 14px;'
 );
 
@@ -562,6 +672,9 @@ async function init() {
     console.error('[app] petAPI 未注入！检查 preload.js / contextIsolation 配置');
     return;
   }
+
+  // 先加载并注册自定义形象，再 loadState（存档里的自定义 id 才能恢复）
+  await loadCustomPets();
 
   await loadState();
   status.createStatusBar(document.body);
