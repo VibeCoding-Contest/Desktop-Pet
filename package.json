@@ -1,9 +1,11 @@
 {
   "name": "desktop-pet",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "桌面桌宠 APP",
+  "main": "main.js",
   "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -14,6 +16,11 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "build": {
+    "appId": "com.team.desktop-pet",
+    "win": { "target": "nsis" },
+    "mac": { "target": "dmg" }
+  },
   "bugs": {
     "url": "https://github.com/VibeCoding-Contest/Desktop-Pet/issues"
   },

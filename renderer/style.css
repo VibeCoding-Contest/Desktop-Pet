@@ -1,0 +1,28 @@
+/* style.css — 全局样式骨架（人 A）
+   仅放框架级样式；气泡/菜单/宠物各自的细节样式由对应模块负责 */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  user-select: none;
+}
+
+#pet-canvas {
+  display: block;
+  /* dev: 加边框便于里程碑1自测时看到透明窗口的位置；人 B 接管后可移除 */
+  border: 1px dashed rgba(0, 0, 0, 0.15);
+}
+
+#bubble-container,
+#menu-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+}
