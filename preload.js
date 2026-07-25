@@ -5,6 +5,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('petAPI', {
+  // 运行平台（renderer 用于决定是否启用点击穿透：Linux 下转发不可靠，默认不启用）
+  platform: process.platform,
+
   // 窗口操作
   moveWindow: (dx, dy) => ipcRenderer.send('move-window', dx, dy),
   setClickThrough: (enable) => ipcRenderer.send('set-click-through', enable),
